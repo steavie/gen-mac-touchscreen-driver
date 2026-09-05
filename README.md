@@ -1,34 +1,46 @@
-# touchscreen-driver
+# gen-mac-touchscreen-driver
 
-> **Ab Version 2.0 ist das eine Menüleisten-App** (`app/`), die den Treiber
-> enthält. Die frühere reine Kommandozeilen-Version (`main.swift` im
-> Wurzelverzeichnis, als LaunchAgent betrieben) bleibt als Referenz liegen,
-> wird aber nicht mehr gepflegt. Aufbau und Hintergründe unten gelten für
-> beide - die App-spezifischen Teile stehen im Abschnitt
-> [Menüleisten-App](#menüleisten-app-ab-20).
+Ein Treiber für **USB-Touchscreens am Mac**, als kleine Menüleisten-App.
 
-macOS hat keinen eingebauten Treiber, der externe USB-HID-Touchscreens
+macOS bringt keinen Klassentreiber mit, der externe USB-HID-Touchscreens
 (HID UsagePage `0x0D` "Digitizer", Usage `0x04` "Touch Screen") als
-Zeiger/Klick interpretiert - anders als Windows. Dieses Tool liest die
-rohen HID-Reports eines per HDMI+USB angeschlossenen 7"-Touchscreens direkt
-aus und übersetzt sie in echte macOS-Events (Mausklick, Scroll, Zoom).
+Zeiger/Klick interpretiert - anders als Windows, das dafür seit Windows 7/8
+den "HID-compliant touch screen"-Treiber hat. Ein solches Panel zeigt am Mac
+also brav ein Bild, reagiert aber auf keine Berührung.
 
-Eingerichtet am 04.09.2026 für ein Display, das über HDMI (Bild) und USB
-(Touch) an einem Mac hängt und dessen Touch-Funktion macOS von sich aus
-nicht erkannt hat.
+Dieses Projekt liest die rohen HID-Reports direkt aus und erzeugt daraus
+echte macOS-Ereignisse: Zeiger, Klick, Ziehen, Doppelklick, Rechtsklick,
+Scrollen und (angenähert) Zoomen.
 
-## Hardware
+## Unterstützte Geräte
 
-7"-IPS-Touchscreen-Kit (baugleich mit den lcdwiki.com/LCD-show-Kits,
-eigentlich für Raspberry Pi gedacht, funktioniert aber generisch an jedem
-HDMI+USB-Host). Anleitung dazu liegt in Paperless unter dem Titel
-"7 Inch Screen Case Assembly Instruction".
+Erkannt wird **jedes** USB-Gerät, das sich als HID-Touchscreen ausweist
+(UsagePage `0x0D`, Usage `0x04`) - nicht ein bestimmtes Modell. Die
+Finger-Slots werden zur Laufzeit aus dem HID-Report-Descriptor gelesen statt
+angenommen, und praktisch alle diese Panels sprechen das
+Standard-"Windows Precision Touch"-Layout.
 
-Touch-Controller laut `dump-elements.swift`:
+Grafiktabletts liegen auf derselben Usage Page, melden aber Usage `0x02`
+(Stift) und werden deshalb nicht erfasst. Passen mehrere Touch-Geräte,
+bindet sich der Treiber an das erste und ignoriert weitere.
 
-- Vendor: `wch.cn`, USB-ID `0x1a86:0xe2e3`, Produktname `USB2IIC_CTP_CONTROL`
-- Meldet Multitouch nach Standard-"Windows Precision Touch"-Layout:
-  10 Finger-Slots im Report, `Contact Count Maximum = 5`
+**Entwickelt und geprüft mit:** 7"-IPS-HDMI-Touchscreen-Kit aus der
+lcdwiki/LCD-show-Familie (eigentlich für den Raspberry Pi gedacht, läuft
+aber an jedem HDMI+USB-Host; beiliegende Anleitung: "7 Inch Screen Case
+Assembly Instruction"). Controller laut `dump-elements.swift`:
+
+- Vendor `wch.cn`, USB-ID `0x1a86:0xe2e3`, Produktname `USB2IIC_CTP_CONTROL`
+- Multitouch nach Standard-"Windows Precision Touch"-Layout: 10 Finger-Slots
+  im Report, `Contact Count Maximum = 5`
+
+Ob andere Panels sauber laufen, ist mangels Hardware ungetestet - der Aufbau
+ist aber bewusst nicht auf dieses Modell zugeschnitten. `dump-elements.swift`
+hilft beim Nachsehen, was ein fremdes Gerät tatsächlich meldet.
+
+> **Hinweis zur Struktur:** Ab Version 2.0 ist das eine Menüleisten-App
+> (`app/`). Die frühere reine Kommandozeilen-Version (`main.swift` im
+> Wurzelverzeichnis, als LaunchAgent betrieben) bleibt als Referenz liegen,
+> wird aber nicht mehr gepflegt.
 
 ## Funktionsweise
 
@@ -173,6 +185,17 @@ cd app
 ./build-pkg.sh    # schnürt daraus Touchscreen-Treiber-<version>.pkg
 ```
 
+Die Signatur-Identität lässt sich überschreiben - sie ist voreingestellt auf
+die lokal erzeugte Identität des Autors:
+
+```bash
+SIGN_IDENTITY="Deine Identität" ./build-app.sh
+```
+
+Warum überhaupt ein eigenes Zertifikat statt ad-hoc: siehe
+[unten](#warum-die-signatur-mit-eigenem-zertifikat-wichtig-ist) - ohne das
+werden die erteilten Systemfreigaben bei **jedem** Rebuild ungültig.
+
 Das Paket ist **unsigniert** - für ein von Gatekeeper akzeptiertes Paket
 bräuchte es ein "Developer ID Installer"-Zertifikat von Apple, das
 selbstsignierte Codesignatur-Zertifikat reicht dafür nicht. Zum Installieren
@@ -214,7 +237,7 @@ codesign -s "Aronax Local Codesign" --force \
 globalen Variablen, die der C-Callback von IOHIDManager referenziert (siehe
 unten, "Architektur").
 
-Live läuft es unter `/Users/familie/touchscreen-driver/` als LaunchAgent
+Live läuft es unter `~/touchscreen-driver/` als LaunchAgent
 `de.aronax.touchscreen-driver` (RunAtLoad, KeepAlive, Logs unter
 `~/Library/Logs/touchscreen-driver/`).
 

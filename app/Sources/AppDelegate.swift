@@ -99,7 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             text: TouchEngine.isRunning ? "Treiber läuft" : "Treiber gestoppt"))
         menu.addItem(statusLine(
             ok: TouchEngine.panelConnected,
-            text: TouchEngine.panelConnected ? "Panel verbunden" : "Panel nicht verbunden"))
+            text: TouchEngine.panelConnected
+                ? "Verbunden: \(TouchEngine.deviceName)"
+                : "Kein Touch-Gerät gefunden"))
 
         if !TouchEngine.accessibilityTrusted {
             let warn = NSMenuItem(title: "Bedienungshilfen freigeben …",

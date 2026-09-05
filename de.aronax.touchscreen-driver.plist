@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/familie/touchscreen-driver/touchscreen-driver</string>
+        <string>$HOME/touchscreen-driver/touchscreen-driver</string>
         <!-- Ziel-Display fest über seine EDID-Kennung. Ohne das greift die
              Automatik "nicht der Hauptbildschirm" daneben, sobald der
              Touchscreen selbst zum Hauptbildschirm gemacht wird.
@@ -29,10 +29,10 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/familie/Library/Logs/touchscreen-driver/stdout.log</string>
+    <string>$HOME/Library/Logs/touchscreen-driver/stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/familie/Library/Logs/touchscreen-driver/stderr.log</string>
+    <string>$HOME/Library/Logs/touchscreen-driver/stderr.log</string>
 
     <key>ProcessType</key>
     <string>Interactive</string>

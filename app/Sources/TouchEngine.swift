@@ -24,8 +24,18 @@ import IOKit.hid
 import ApplicationServices
 import Carbon.HIToolbox
 
-let targetVendorID = 0x1a86   // wch.cn
-let targetProductID = 0xe2e3  // USB2IIC_CTP_CONTROL
+// Erkannt wird jedes USB-HID-Gerät, das sich als Touchscreen ausweist -
+// nicht ein bestimmtes Modell. Die Finger-Slots werden ohnehin zur Laufzeit
+// aus dem HID-Report-Descriptor gelesen, nicht angenommen, und praktisch
+// alle diese Panels sprechen das Standard-"Windows Precision Touch"-Layout.
+//
+// Grafiktabletts liegen auf derselben Usage Page, melden aber Usage 0x02
+// (Stift) statt 0x04 (Touch Screen) und werden hier deshalb nicht erfasst.
+//
+// Entwickelt und geprüft mit: 7"-HDMI-Panel aus der lcdwiki/LCD-show-Familie,
+// Controller "USB2IIC_CTP_CONTROL" (wch.cn, 0x1a86:0xe2e3), 5 Kontakte.
+let digitizerUsagePage = 0x0D
+let touchScreenUsage = 0x04
 
 func vlog(_ message: @autoclosure () -> String) {
     if Settings.verboseLogging { NSLog("%@", message()) }
@@ -133,6 +143,13 @@ var slots: [TouchSlot] = []
 var slotXRange: [(min: CFIndex, max: CFIndex)] = []
 var slotYRange: [(min: CFIndex, max: CFIndex)] = []
 var cookieToSlotField: [IOHIDElementCookie: (slot: Int, field: SlotField)] = [:]
+
+/// Seit der Erkennung über Usage Page/Usage können mehrere Geräte passen.
+/// Wir binden uns an das erste und ignorieren weitere: die Finger-Slots sind
+/// global, ein zweites Gerät würde sie überschreiben - und Element-Cookies
+/// sind pro Gerät vergeben, könnten sich zwischen Geräten also überschneiden.
+var boundDevice: IOHIDDevice? = nil
+var boundDeviceName = "—"
 
 var mode: GestureMode = .idle
 
@@ -515,6 +532,9 @@ func processGestureState() {
 func hidInputCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                       sender: UnsafeMutableRawPointer?, value: IOHIDValue) {
     let element = IOHIDValueGetElement(value)
+    // Nur Ereignisse des gebundenen Geräts auswerten - Cookies anderer
+    // Geräte könnten dieselben Zahlen haben und Slots verfälschen.
+    guard let bound = boundDevice, IOHIDElementGetDevice(element) === bound else { return }
     let cookie = IOHIDElementGetCookie(element)
     guard let mapping = cookieToSlotField[cookie] else { return }
     guard slots.indices.contains(mapping.slot) else { return }
@@ -560,11 +580,21 @@ func resetEverything() {
 
 func hidDeviceMatchedCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                               sender: UnsafeMutableRawPointer?, device: IOHIDDevice) {
+    let product = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "Touch-Gerät"
+
+    // An das erste passende Gerät binden, weitere ignorieren.
+    if let bound = boundDevice, bound !== device {
+        NSLog("Weiteres Touch-Gerät ignoriert: %@", product)
+        return
+    }
+
     guard let elements = IOHIDDeviceCopyMatchingElements(device, nil, IOOptionBits(kIOHIDOptionsTypeNone)) as? [IOHIDElement] else {
         return
     }
 
     resetEverything()
+    boundDevice = device
+    boundDeviceName = product
     slots = []
     slotXRange = []
     slotYRange = []
@@ -598,15 +628,19 @@ func hidDeviceMatchedCallback(context: UnsafeMutableRawPointer?, result: IORetur
     }
 
     TouchEngine.panelConnected = true
-    vlog("Touch-Panel verbunden (\(slots.count) Finger-Slots)")
+    NSLog("Touch-Gerät verbunden: %@ (%d Finger-Slots)", product, slots.count)
     TouchEngine.notifyStatusChanged()
 }
 
 func hidDeviceRemovedCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                               sender: UnsafeMutableRawPointer?, device: IOHIDDevice) {
+    // Nur reagieren, wenn wirklich unser gebundenes Gerät verschwindet.
+    guard let bound = boundDevice, bound === device else { return }
     resetEverything()
+    boundDevice = nil
+    boundDeviceName = "—"
     TouchEngine.panelConnected = false
-    vlog("Touch-Panel getrennt")
+    vlog("Touch-Gerät getrennt")
     TouchEngine.notifyStatusChanged()
 }
 
@@ -631,6 +665,9 @@ enum TouchEngine {
 
     static var targetDisplayLabel: String { targetDescription }
 
+    /// Produktname des erkannten Touch-Geräts, für die Anzeige im Menü.
+    static var deviceName: String { boundDeviceName }
+
     static func notifyStatusChanged() {
         DispatchQueue.main.async { onStatusChange?() }
     }
@@ -643,8 +680,8 @@ enum TouchEngine {
 
         let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let matchDict: [String: Any] = [
-            kIOHIDVendorIDKey as String: targetVendorID,
-            kIOHIDProductIDKey as String: targetProductID
+            kIOHIDDeviceUsagePageKey as String: digitizerUsagePage,
+            kIOHIDDeviceUsageKey as String: touchScreenUsage
         ]
         IOHIDManagerSetDeviceMatching(m, matchDict as CFDictionary)
         IOHIDManagerRegisterInputValueCallback(m, hidInputCallback, nil)
@@ -668,6 +705,8 @@ enum TouchEngine {
         IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
         CGDisplayRemoveReconfigurationCallback(displayReconfigCallback, nil)
         manager = nil
+        boundDevice = nil
+        boundDeviceName = "—"
         panelConnected = false
         notifyStatusChanged()
     }

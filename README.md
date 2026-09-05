@@ -1,4 +1,4 @@
-# steavie-gen-mac-touchscreen-driver
+# gen-mac-touchscreen-driver
 
 A driver for **USB touchscreens on macOS**, as a small menu bar app.
 

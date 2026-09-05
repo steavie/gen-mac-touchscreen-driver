@@ -288,6 +288,36 @@ beendet eine laufende Instanz der App, bevor es die neue startet - sonst
 liefen nach einem Update zwei Treiber gleichzeitig und jeder Klick käme
 doppelt.
 
+## Installer startete die App nicht (05.09.2026, v2.3)
+
+Nach der Installation von v2.2 lief gar nichts mehr: Paket sauber
+installiert, richtige Version in `/Programme`, aber **kein Prozess**. Manuell
+gestartet lief die App tadellos.
+
+Ursache im Installationsprotokoll gefunden:
+
+```
+19:30:09  Executing script "postinstall"        <- Startversuch
+19:30:14  Registered bundle ... for uid 501     <- erst jetzt kennt
+                                                   LaunchServices die App
+```
+
+Das `postinstall`-Skript läuft, **bevor** der Installer das Bundle fertig
+registriert hat - `open -a` griff also ins Leere. Verschärft dadurch, dass
+der Aufruf als `... 2>/dev/null || true` geschrieben war: Der Fehlschlag war
+vollständig unsichtbar, das Paket meldete Erfolg, der Treiber war weg.
+
+Zwei Lehren, beide von der Sorte, die in diesem Projekt immer wieder
+auftaucht:
+
+1. Fehler nicht wegwerfen. `2>/dev/null || true` an einer Stelle, die etwas
+   Wichtiges tut, ist eine Falle - PackageKit hätte die Ausgabe brav ins
+   Installationsprotokoll geschrieben.
+2. Nicht annehmen, dass unmittelbar nach dem Kopieren alles bereit ist. Der
+   Start wird jetzt bis zu zehnmal über rund 20 Sekunden versucht, im
+   Hintergrund, damit der Installer nicht wartet. Die App erscheint dadurch
+   ein paar Sekunden nach der Installation - das ist beabsichtigt.
+
 ## Status (Stand 05.09.2026, v1.3)
 
 Alles vom Nutzer bestätigt:

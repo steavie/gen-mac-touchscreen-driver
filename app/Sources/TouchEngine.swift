@@ -1,4 +1,4 @@
-// steavie-gen-mac-touchscreen-driver — gesture engine
+// gen-mac-touchscreen-driver — gesture engine
 // Copyright (C) 2026 Stefan Kriesel
 //
 // This program is free software: you can redistribute it and/or modify it

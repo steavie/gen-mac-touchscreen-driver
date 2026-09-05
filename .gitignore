@@ -1,3 +1,4 @@
+.DS_Store
 app/build/
-touchscreen-driver
 dump-elements
+touchscreen-driver

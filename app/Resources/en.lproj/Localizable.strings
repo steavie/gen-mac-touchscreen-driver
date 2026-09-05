@@ -1,4 +1,4 @@
-/* steavie-gen-mac-touchscreen-driver — English user interface strings.
+/* gen-mac-touchscreen-driver — English user interface strings.
    The English text is also the key, so this is an identity mapping. It is
    kept explicit so that every localizable string is visible in one place. */
 

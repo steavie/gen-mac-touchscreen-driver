@@ -1,4 +1,4 @@
-// steavie-gen-mac-touchscreen-driver — menu bar interface
+// gen-mac-touchscreen-driver — menu bar interface
 // Copyright (C) 2026 Stefan Kriesel
 //
 // This program is free software: you can redistribute it and/or modify it

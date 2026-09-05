@@ -1,9 +1,9 @@
 #!/bin/bash
-# Baut Touchscreen-Treiber.app aus den Quellen in Sources/.
+# Builds Touchscreen-Treiber.app from the sources in Sources/.
 #
-# -swift-version 5 ist nötig: die C-Callbacks von IOHIDManager und
-# CoreGraphics sind Funktionszeiger und können nichts einfangen, greifen also
-# auf globale Variablen zu. Swift 6 würde das als Concurrency-Verstoß werten.
+# -swift-version 5 is required: the IOHIDManager and CoreGraphics callbacks are
+# C function pointers and cannot capture anything, so they reach global
+# variables. Swift 6 would treat that as a concurrency violation.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -19,7 +19,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp Info.plist "$APP/Contents/Info.plist"
 
-echo "Kompiliere …"
+echo "Compiling …"
 swiftc -swift-version 5 -O \
     Sources/*.swift \
     -o "$APP/Contents/MacOS/$EXECUTABLE" \
@@ -27,13 +27,13 @@ swiftc -swift-version 5 -O \
     -framework IOKit \
     -framework ServiceManagement
 
-echo "Signiere mit '$SIGN_IDENTITY' …"
+echo "Signing with '$SIGN_IDENTITY' …"
 codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$APP"
 
 echo
 codesign -dv "$APP" 2>&1 | grep -E "Identifier|Format|Signature|Authority" || true
 echo
-echo "Designated Requirement:"
+echo "Designated requirement:"
 codesign -d -r- "$APP" 2>&1 | tail -1
 echo
-echo "Fertig: $(pwd)/$APP"
+echo "Done: $(pwd)/$APP"

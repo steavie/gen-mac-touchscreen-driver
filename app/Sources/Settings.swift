@@ -1,14 +1,19 @@
-// Einstellungen der App, gesichert in UserDefaults.
+// gen-mac-touchscreen-driver — settings, persisted in UserDefaults
+// Copyright (C) 2026 Stefan Kriesel
 //
-// Da Treiber und Oberfläche seit der App-Version im selben Prozess laufen,
-// braucht es keine Konfigurationsdatei und kein Nachladen: die Menü-Einträge
-// schreiben hier hinein, die Gesten-Engine liest bei jedem Event direkt
-// wieder heraus.
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the
+// Free Software Foundation, either version 3 of the License, or (at your
+// option) any later version. See LICENSE for details.
+//
+// Driver and interface live in the same process, so there is no config file
+// and nothing to reload: the menu writes here, and the gesture engine reads
+// from here on every event.
 
 import Foundation
 
 enum SettingsKey {
-    static let targetDisplay = "targetDisplay"        // "auto" oder "vendor:model:serial"
+    static let targetDisplay = "targetDisplay"        // "auto" or "vendor:model:serial"
     static let invertScrollX = "invertScrollX"
     static let invertScrollY = "invertScrollY"
     static let zoomStepPixels = "zoomStepPixels"
@@ -38,7 +43,7 @@ enum Settings {
 
     private static let d = UserDefaults.standard
 
-    /// "auto" oder eine EDID-Kennung "vendor:model:serial".
+    /// Either "auto" or an EDID identity "vendor:model:serial".
     static var targetDisplay: String {
         get { d.string(forKey: SettingsKey.targetDisplay) ?? "auto" }
         set { d.set(newValue, forKey: SettingsKey.targetDisplay) }
@@ -54,13 +59,13 @@ enum Settings {
         set { d.set(newValue, forKey: SettingsKey.invertScrollY) }
     }
 
-    /// Abstandsänderung pro Zoom-Schritt in Pixeln. Kleiner = empfindlicher.
+    /// Distance change per zoom step, in pixels. Smaller means more sensitive.
     static var zoomStepPixels: Double {
         get { d.double(forKey: SettingsKey.zoomStepPixels) }
         set { d.set(newValue, forKey: SettingsKey.zoomStepPixels) }
     }
 
-    /// Wartezeit, bevor aus einer Berührung ein Klick wird (Sekunden).
+    /// How long a touch is held back before it becomes a click, in seconds.
     static var singleTouchDelay: Double {
         get { d.double(forKey: SettingsKey.singleTouchDelay) }
         set { d.set(newValue, forKey: SettingsKey.singleTouchDelay) }
@@ -91,7 +96,7 @@ enum Settings {
         set { d.set(newValue, forKey: SettingsKey.verboseLogging) }
     }
 
-    /// Alles auf Werkseinstellung zurück.
+    /// Back to factory defaults.
     static func resetAll() {
         for key in [SettingsKey.targetDisplay, SettingsKey.invertScrollX, SettingsKey.invertScrollY,
                     SettingsKey.zoomStepPixels, SettingsKey.singleTouchDelay,

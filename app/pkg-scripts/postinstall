@@ -1,39 +1,39 @@
 #!/bin/bash
-# Läuft als root nach dem Kopieren der App.
+# Runs as root after the app has been copied into place.
 #
-# Aufgaben:
-#  1. Die alte Kommandozeilen-Version abräumen (LaunchAgent). Liefe die
-#     weiter, gäbe es zwei Treiber gleichzeitig und jeder Klick käme doppelt.
-#  2. Die App im Kontext des angemeldeten Benutzers starten.
+# Tasks:
+#  1. Remove the old command line version (LaunchAgent). If it kept running
+#     there would be two drivers and every click would land twice.
+#  2. Start the app in the context of the logged-in user.
 set -u
 
 APP="/Applications/Touchscreen-Treiber.app"
 LABEL="de.aronax.touchscreen-driver"
 
-# Der Installer läuft als root - wir brauchen aber den angemeldeten Benutzer,
-# dessen LaunchAgent-Domain und GUI-Sitzung.
+# The installer runs as root, but we need the logged-in user, their
+# LaunchAgent domain and their GUI session.
 CONSOLE_USER=$(stat -f %Su /dev/console)
 if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
-    echo "Kein angemeldeter Benutzer gefunden, überspringe Start."
+    echo "No logged-in user found, skipping launch."
     exit 0
 fi
 USER_UID=$(id -u "$CONSOLE_USER")
 USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')
 
-# 1. Alte Kommandozeilen-Version abräumen
+# 1. remove the old command line version
 launchctl bootout "gui/$USER_UID/$LABEL" 2>/dev/null || true
 rm -f "$USER_HOME/Library/LaunchAgents/$LABEL.plist"
 
-# Eine eventuell noch laufende alte Kommandozeilen-Instanz beenden
+# terminate a possibly still running old command line instance
 pkill -u "$USER_UID" -f "touchscreen-driver/touchscreen-driver" 2>/dev/null || true
 
-# 2. Eine bereits laufende Instanz der App beenden. Wichtig bei einem
-#    Update: die App wurde gerade unter den Füßen ausgetauscht, und ohne das
-#    liefen nach dem Start unten ZWEI Treiber - jeder Klick käme doppelt.
+# 2. Terminate an already running instance of the app. Important on update:
+#    the app was just swapped out underneath it, and without this the launch
+#    below would leave TWO drivers running — every click would land twice.
 pkill -u "$USER_UID" -f "Touchscreen-Treiber.app/Contents/MacOS" 2>/dev/null || true
 sleep 1
 
-# 3. App als Benutzer starten
+# 3. start the app as the user
 launchctl asuser "$USER_UID" sudo -u "$CONSOLE_USER" open -a "$APP" 2>/dev/null || true
 
 exit 0

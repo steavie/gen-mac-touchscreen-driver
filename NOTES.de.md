@@ -1,4 +1,10 @@
-# Projekt: touchscreen-driver
+# Entwicklungsnotizen (deutsch)
+
+> Development log, kept in German. The project documentation is in
+> English — see [README.md](README.md). This file records how the
+> project came about, which decisions were made and which dead ends
+> were hit; it is a diary, not a specification.
+
 
 Entstehungsgeschichte, Entscheidungen und offene Punkte zu diesem Projekt -
 für den technischen Aufbau siehe `README.md`.

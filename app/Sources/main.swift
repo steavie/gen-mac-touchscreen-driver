@@ -1,8 +1,13 @@
-// Einstiegspunkt der Menüleisten-App.
+// gen-mac-touchscreen-driver — application entry point
+// Copyright (C) 2026 Stefan Kriesel
 //
-// Kein Storyboard, kein Fenster: LSUIElement in der Info.plist sorgt dafür,
-// dass die App nur als Symbol in der Menüleiste erscheint (kein Dock-Symbol,
-// kein Programmwechsler-Eintrag).
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the
+// Free Software Foundation, either version 3 of the License, or (at your
+// option) any later version. See LICENSE for details.
+//
+// No storyboard, no window: LSUIElement in Info.plist keeps the app to a menu
+// bar icon only (no Dock icon, no entry in the app switcher).
 
 import Cocoa
 

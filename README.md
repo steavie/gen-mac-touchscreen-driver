@@ -1,339 +1,290 @@
 # gen-mac-touchscreen-driver
 
-Ein Treiber für **USB-Touchscreens am Mac**, als kleine Menüleisten-App.
+A driver for **USB touchscreens on macOS**, as a small menu bar app.
 
-macOS bringt keinen Klassentreiber mit, der externe USB-HID-Touchscreens
-(HID UsagePage `0x0D` "Digitizer", Usage `0x04` "Touch Screen") als
-Zeiger/Klick interpretiert - anders als Windows, das dafür seit Windows 7/8
-den "HID-compliant touch screen"-Treiber hat. Ein solches Panel zeigt am Mac
-also brav ein Bild, reagiert aber auf keine Berührung.
+macOS ships no class driver that turns an external USB HID touchscreen
+(HID usage page `0x0D` "Digitizer", usage `0x04` "Touch Screen") into
+pointer and click events — unlike Windows, which has had its
+"HID-compliant touch screen" driver since Windows 7/8. Such a panel happily
+shows a picture on a Mac but does not react to touch at all.
 
-Dieses Projekt liest die rohen HID-Reports direkt aus und erzeugt daraus
-echte macOS-Ereignisse: Zeiger, Klick, Ziehen, Doppelklick, Rechtsklick,
-Scrollen und (angenähert) Zoomen.
+This project reads the raw HID reports directly and synthesizes real macOS
+events from them: pointer, click, drag, double click, right click, scrolling
+and (approximated) zooming.
 
-## Unterstützte Geräte
+## Requirements
 
-Erkannt wird **jedes** USB-Gerät, das sich als HID-Touchscreen ausweist
-(UsagePage `0x0D`, Usage `0x04`) - nicht ein bestimmtes Modell. Die
-Finger-Slots werden zur Laufzeit aus dem HID-Report-Descriptor gelesen statt
-angenommen, und praktisch alle diese Panels sprechen das
-Standard-"Windows Precision Touch"-Layout.
+- macOS 13 or newer (developed and tested on macOS 26)
+- A USB touchscreen that reports itself as a HID touch screen
+- Xcode or the Command Line Tools, if you want to build it yourself
 
-Grafiktabletts liegen auf derselben Usage Page, melden aber Usage `0x02`
-(Stift) und werden deshalb nicht erfasst. Passen mehrere Touch-Geräte,
-bindet sich der Treiber an das erste und ignoriert weitere.
+## Supported devices
 
-**Entwickelt und geprüft mit:** 7"-IPS-HDMI-Touchscreen-Kit aus der
-lcdwiki/LCD-show-Familie (eigentlich für den Raspberry Pi gedacht, läuft
-aber an jedem HDMI+USB-Host; beiliegende Anleitung: "7 Inch Screen Case
-Assembly Instruction"). Controller laut `dump-elements.swift`:
+The driver matches **any** USB device that identifies as a HID touch screen
+(usage page `0x0D`, usage `0x04`) — not one particular model. Finger slots
+are read from the HID report descriptor at runtime instead of being assumed,
+and virtually all of these panels speak the standard "Windows Precision
+Touch" report layout.
 
-- Vendor `wch.cn`, USB-ID `0x1a86:0xe2e3`, Produktname `USB2IIC_CTP_CONTROL`
-- Multitouch nach Standard-"Windows Precision Touch"-Layout: 10 Finger-Slots
-  im Report, `Contact Count Maximum = 5`
+Graphics tablets live on the same usage page but report usage `0x02` (pen),
+so they are not picked up. If several touch devices match, the driver binds
+to the first one and ignores the rest.
 
-Ob andere Panels sauber laufen, ist mangels Hardware ungetestet - der Aufbau
-ist aber bewusst nicht auf dieses Modell zugeschnitten. `dump-elements.swift`
-hilft beim Nachsehen, was ein fremdes Gerät tatsächlich meldet.
+**Developed and verified with:** a 7" IPS HDMI touchscreen kit of the
+lcdwiki/LCD-show family (sold for the Raspberry Pi, but works on any
+HDMI + USB host). Its controller, as reported by `dump-elements.swift`:
 
-> **Hinweis zur Struktur:** Ab Version 2.0 ist das eine Menüleisten-App
-> (`app/`). Die frühere reine Kommandozeilen-Version (`main.swift` im
-> Wurzelverzeichnis, als LaunchAgent betrieben) bleibt als Referenz liegen,
-> wird aber nicht mehr gepflegt.
+- Vendor `wch.cn`, USB ID `0x1a86:0xe2e3`, product name `USB2IIC_CTP_CONTROL`
+- Multitouch in the standard "Windows Precision Touch" layout: 10 finger
+  slots in the report, `Contact Count Maximum = 5`
 
-## Funktionsweise
+Whether other panels work cleanly is **untested** for lack of hardware — but
+nothing in the design is tailored to this model. `dump-elements.swift` prints
+what a given device actually reports, which is the place to start if
+something misbehaves.
 
-- **1 Finger**: Zeiger bewegen + Klick + Ziehen (Mouse Down/Dragged/Up)
-- **1 Finger, doppelt/dreifach getippt**: Doppel-/Dreifachklick. Dafür muss
-  im CGEvent das Feld `mouseEventClickState` gesetzt werden - zwei einzelne
-  Klicks hintereinander erkennt macOS **nicht** als Doppelklick, im Finder
-  ließe sich sonst nichts per Doppeltipp öffnen. Maßstab ist das
-  System-Doppelklick-Intervall (`NSEvent.doubleClickInterval`) plus eine
-  großzügige Ortstoleranz (25px), weil ein Finger nie zweimal exakt
-  dieselbe Stelle trifft.
-- **2 Finger kurz aufgetippt** (ohne Scroll-/Zoom-Bewegung): **Rechtsklick**,
-  wie das Zwei-Finger-Tippen auf dem Trackpad. Wird erst ausgelöst, wenn
-  wirklich alle Finger weg sind - sonst käme er mitten im Abheben.
-- **2 Finger, parallel bewegt**: Scrollen (`CGEventCreateScrollWheelEvent`,
-  pixelgenau, mit Aufsammeln der Nachkommastellen, damit langsames Ziehen
-  keine Bewegung verliert)
-- **2 Finger, auseinander-/zusammenziehen (Pinch)**: Zoom-**Näherung** über
-  Cmd+Plus / Cmd+Minus, nicht echtes System-Pinch. Echtes Pinch bräuchte
-  Apples private/undokumentierte Multitouch-Gesten-API - bewusst nicht
-  genutzt (Risiko: bricht jederzeit mit macOS-Updates). Cmd+±-Zoom
-  funktioniert deshalb nur in Apps, die diesen Shortcut selbst unterstützen
-  (Safari, Vorschau, Fotos - **nicht** Finder, der hat keinen Cmd+±-Shortcut
-  für die Symbolgröße).
-- 3+ Finger: werden ignoriert.
+## Installation
 
-Die Art der Zwei-Finger-Geste (Scroll **oder** Zoom) wird zu Beginn einmal
-festgelegt und bis zum Loslassen beibehalten - sonst wechselt eine Geste
-laufend zwischen beidem hin und her und ein Pinch verschiebt nebenbei die
-Seite.
+1. Build the app and the installer package:
 
-### Ziel-Display
+   ```bash
+   cd app
+   ./build-app.sh
+   ./build-pkg.sh
+   ```
 
-`--list` zeigt alle Displays samt fertiger Kennung zum Kopieren:
+   See [Building](#building) for the code signing prerequisite — it matters
+   more than it looks.
 
-```
-Gefundene Displays:
-  [0] id=3 1920x1080 bei (0,0)  --display 4837:8448:20000080  (Hauptbildschirm)
-  [1] id=1 3840x1620 bei (1920,0)  --display 4268:17167:842018892
-```
+2. Install `app/build/Touchscreen-Treiber-<version>.pkg` via
+   **right click → Open**. The package is unsigned, so a double click would
+   be blocked by Gatekeeper.
 
-Ausgewählt wird in dieser Reihenfolge:
+3. On first launch macOS asks for two permissions
+   (System Settings → Privacy & Security):
 
-1. **`--display <vendor:model:serial>`** - empfohlen. Die Kennung stammt aus
-   der EDID des Displays und bleibt über Umstecken, Neustarts und Änderungen
-   der Anordnung gleich. Genau so ist es in der LaunchAgent-Plist hinterlegt.
-2. `--screen <index>` - der Index in obiger Liste. Achtung: **verschiebt
-   sich**, sobald sich die Anordnung ändert.
-3. Automatik: das Display, das nicht der Hauptbildschirm ist. Nur eine
-   Notlösung - **sie greift daneben, sobald der Touchscreen selbst zum
-   Hauptbildschirm gemacht wird** (dann zielt der Treiber auf den anderen
-   Monitor und "der Touch geht nicht mehr").
+   - **Input Monitoring** — to read the raw HID reports
+   - **Accessibility** — to post mouse and keyboard events
 
-Die Geometrie wird per `CGDisplayRegisterReconfigurationCallback` bei jeder
-Änderung neu ermittelt, damit das Koordinaten-Mapping nicht nach dem ersten
-Umstöpseln falsch bleibt. Ist das gewählte Display (noch) nicht da, wartet
-der Treiber darauf, statt sich zu beenden - das Panel kann beim Login ja
-schlicht noch nicht angesteckt sein.
+   Without Accessibility the driver still runs and still reads touches, but
+   macOS discards every event it posts **silently**. The menu bar icon turns
+   red in that case and the menu offers a shortcut to the right settings
+   pane.
 
-**Nicht** brauchbar zur Erkennung ist die physische Größe: dieses Panel
-meldet per EDID `469x259mm` (~21"), obwohl es ein 7"-Display ist. Billige
-HDMI-Panels geben da oft generische Werte an.
+4. Enable **"Bei Anmeldung starten"** (start at login) in the menu if you
+   want it to come back automatically after a reboot.
 
-Laufende Event-Ausgabe nur mit `--verbose`. Standardmäßig loggt der Treiber
-nur Start und An-/Abstecken - er läuft dauerhaft, und eine Zeile pro
-Scroll-Event würde das Log unbegrenzt wachsen lassen (launchd rotiert nicht).
+## Gestures
 
-### Scrollrichtung
+| Gesture | Result |
+| --- | --- |
+| One finger tap | Click |
+| One finger drag | Drag |
+| Double / triple tap | Double / triple click |
+| Two finger tap | Right click |
+| Two fingers dragged | Scroll |
+| Two fingers pinched | Zoom (approximated, see below) |
+| Three or more fingers | Ignored |
 
-Standard ist macOS-Verhalten ("natürliches Scrollen", der Inhalt folgt dem
-Finger). Jede Achse lässt sich einzeln umdrehen:
+A few details that are less obvious than they look:
 
-- `--invert-y` - vertikal umdrehen (klassisches Windows-Verhalten)
-- `--invert-x` - horizontal umdrehen
+- **Double click needs `mouseEventClickState`.** Two separate clicks in quick
+  succession are *not* recognized as a double click by macOS; the click count
+  has to be set on the event itself. Without it you cannot open anything in
+  Finder by double tapping. The window is the system double click interval
+  (`NSEvent.doubleClickInterval`) plus a generous 25 px position tolerance,
+  because a finger never hits the exact same spot twice.
+- **Right click fires only once all fingers are up**, otherwise it would
+  trigger halfway through lifting the second finger.
+- **Scrolling accumulates fractions** instead of rounding them away, so slow
+  drags do not lose motion.
+- **A two finger gesture is classified once** — as either scroll or zoom —
+  and keeps that classification until you let go. Deciding per frame makes a
+  gesture flip back and forth, so a pinch would drag the page around while
+  zooming.
+- **Zoom is an approximation** via Cmd+Plus / Cmd+Minus, not a real system
+  pinch. Real pinch gestures would require Apple's private, undocumented
+  multitouch gesture API, which is deliberately avoided here: it can break
+  with any macOS update, injecting into the HID event stream usually needs
+  entitlements Apple only grants to its own binaries, and malformed events
+  reach the window server rather than just this process. The consequence is
+  that zoom only works in apps that support the Cmd+± shortcut themselves
+  (Safari, Preview, Photos — **not** Finder, which has no such shortcut for
+  icon size).
 
-Bewusst als **Laufzeit-Flag** statt als Konstante im Code: ein Rebuild macht
-die TCC-Freigaben ungültig (siehe unten), ein zusätzliches Argument in der
-LaunchAgent-Plist nicht. Zum Ändern also das Flag in
-`~/Library/LaunchAgents/de.aronax.touchscreen-driver.plist` unter
-`ProgramArguments` ergänzen und den Dienst neu laden - ohne neu zu bauen.
+## Settings
 
-### Wichtiger Stolperstein: Tastaturlayout bei Cmd+±
+Driver and interface run in the **same process**, so there is no config file
+and nothing to reload: the menu writes to `UserDefaults` and the gesture
+engine reads from it on every event. Changes take effect immediately.
 
-Menü-Shortcuts wie Cmd+Plus matcht macOS über den **physischen Tastencode +
-aktuelles Tastaturlayout**, nicht über ein per `keyboardSetUnicodeString()`
-gesetztes Zeichen (das wirkt nur für echte Text-Eingabe). Ein fest codierter
-US-Tastencode für "+"/"-" trifft auf einem deutschen Layout die falsche
-Taste und der Zoom-Shortcut feuert nie. Der Treiber ermittelt die richtige
-Taste deshalb zur Laufzeit über die Carbon-Layout-API (`UCKeyTranslate` +
-`TISCopyCurrentKeyboardLayoutInputSource`), sodass das layoutunabhängig
-funktioniert.
+The menu offers:
 
-### Zweiter Stolperstein: Report-Reihenfolge beim Touch-Down
+- **Status** — whether the driver runs and which device is connected
+- **Target display** — automatic, or a specific display
+- **Scrolling** — natural or classic, horizontal axis invertible
+- **Sliders** for zoom sensitivity and click delay
+- **Start at login** (`SMAppService`), verbose logging, reset settings,
+  restart driver
 
-Dieser Controller schickt X/Y-Koordinaten **vor** dem Tip-Switch-Down-Report
-im selben Tastendruck. Ein "haveX/haveY beim Touch-Down zurücksetzen, um
-alte Koordinaten zu vermeiden" (naheliegend, aber falsch für dieses Gerät)
-verwirft dadurch die gerade erst eingetroffenen frischen Koordinaten wieder,
-bevor die Aktivierungsprüfung sie sieht - Touch hätte dadurch nie ausgelöst.
+### Target display
 
-## Menüleisten-App (ab 2.0)
+Touch coordinates are normalized (0…1) and mapped onto one display, so the
+driver has to know which one. Selection order:
 
-Treiber und Oberfläche laufen im **selben Prozess**. Dadurch braucht es
-keine Konfigurationsdatei und kein Nachladen: die Menü-Einträge schreiben in
-`UserDefaults`, die Gesten-Engine liest bei jedem Ereignis direkt daraus -
-Änderungen wirken sofort.
+1. A display pinned in the menu. It is stored as its EDID identity
+   (`vendor:model:serial`), which survives replugging, reboots and
+   rearranging — unlike a display index, which shifts.
+2. Automatic: the display that is *not* the main one. This is a fallback
+   only, and it **aims at the wrong screen as soon as the touchscreen itself
+   becomes the main display** — a failure mode that presents as "touch
+   stopped working".
 
-Im Menü:
+Geometry is re-resolved on every display change via
+`CGDisplayRegisterReconfigurationCallback`, so the mapping does not go stale
+after the first rearrangement. If the chosen display is absent, the driver
+waits for it instead of quitting — the panel may simply not be plugged in
+yet at login.
 
-- **Status**: ob der Treiber läuft und ob das Panel verbunden ist (grüner
-  bzw. roter Punkt)
-- **Warnung**, falls die Bedienungshilfen-Freigabe fehlt - in Rot, samt
-  Verknüpfung in die Systemeinstellungen
-- **Display**: Automatik oder festes Display (Liste aller angeschlossenen)
-- **Scrollen**: natürlich / klassisch, horizontal umkehrbar
-- **Regler** für Zoom-Empfindlichkeit und Klick-Verzögerung
-- **Bei Anmeldung starten** (`SMAppService`), ausführliches Protokoll,
-  Einstellungen zurücksetzen, Treiber neu starten
+**Physical size is not usable for identification:** the reference panel
+reports `469x259mm` (~21") over EDID although it is a 7" display. Cheap HDMI
+panels routinely report generic nonsense there.
 
-Das Menüleisten-Symbol ist im Normalfall ein Schablonenbild (passt sich
-hell/dunkel an), im Fehlerfall bewusst **rot** - ein monochromes
-durchgestrichenes Symbol übersieht man in der Menüleiste sonst leicht.
-
-**Stolperstein:** Nicht jedes SF-Symbol existiert auf jeder macOS-Version.
-`hand.tap.slash` gibt es hier z.B. nicht, `NSImage(systemSymbolName:)`
-liefert dann `nil` - und ein Menüleisten-Symbol ohne Bild hat keine Breite
-und ist damit **unsichtbar**. Deshalb probiert die App mehrere Symbolnamen
-durch und fällt notfalls auf einen Text zurück.
-
-Zum Prüfen der selten sichtbaren Warndarstellung gibt es einen versteckten
-Schalter:
-
-```bash
-TSD_FORCE_WARN=1 /Applications/Touchscreen-Treiber.app/Contents/MacOS/TouchscreenDriver
-```
-
-### Bauen und paketieren
+## Building
 
 ```bash
 cd app
-./build-app.sh    # baut und signiert Touchscreen-Treiber.app
-./build-pkg.sh    # schnürt daraus Touchscreen-Treiber-<version>.pkg
+./build-app.sh    # builds and signs Touchscreen-Treiber.app
+./build-pkg.sh    # wraps it into Touchscreen-Treiber-<version>.pkg
 ```
 
-Die Signatur-Identität lässt sich überschreiben - sie ist voreingestellt auf
-die lokal erzeugte Identität des Autors:
+`build-app.sh` signs with a code signing identity from your keychain,
+defaulting to the author's. Override it:
 
 ```bash
-SIGN_IDENTITY="Deine Identität" ./build-app.sh
+SIGN_IDENTITY="Your Identity" ./build-app.sh
 ```
 
-Warum überhaupt ein eigenes Zertifikat statt ad-hoc: siehe
-[unten](#warum-die-signatur-mit-eigenem-zertifikat-wichtig-ist) - ohne das
-werden die erteilten Systemfreigaben bei **jedem** Rebuild ungültig.
+### Why signing with your own certificate matters
 
-Das Paket ist **unsigniert** - für ein von Gatekeeper akzeptiertes Paket
-bräuchte es ein "Developer ID Installer"-Zertifikat von Apple, das
-selbstsignierte Codesignatur-Zertifikat reicht dafür nicht. Zum Installieren
-deshalb **Rechtsklick auf das Paket → Öffnen**, ein Doppelklick würde
-blockiert.
-
-Das `postinstall`-Skript räumt dabei die alte Kommandozeilen-Version ab
-(LaunchAgent) und beendet eine eventuell laufende Instanz der App, bevor es
-die neue startet - sonst liefen nach einem Update zwei Treiber gleichzeitig
-und jeder Klick käme doppelt.
-
-## Dateien
-
-- `app/Sources/TouchEngine.swift` - die Gesten-Engine (HID lesen, Events
-  erzeugen). Der inhaltliche Kern.
-- `app/Sources/AppDelegate.swift` - Menüleisten-Oberfläche
-- `app/Sources/Settings.swift` - Einstellungen in UserDefaults
-- `app/Info.plist`, `app/build-app.sh`, `app/build-pkg.sh`,
-  `app/pkg-scripts/postinstall` - Bundle, Bauen, Paketieren
-- `main.swift` - **veraltet**: die frühere reine Kommandozeilen-Version,
-  bleibt als Referenz liegen
-- `dump-elements.swift` - Diagnose-Tool, listet alle HID-Elemente des
-  Controllers auf (Report-IDs, Cookies, Usage Pages, Value-Ranges). Nützlich
-  falls sich am Gerät oder der Zuordnung mal wieder was klären lässt.
-- `de.aronax.touchscreen-driver.plist` - LaunchAgent-Config als Referenz
-  (die tatsächlich aktive Version liegt unter
-  `~/Library/LaunchAgents/de.aronax.touchscreen-driver.plist`)
-
-## Build & Deploy (auf dem Mac mit dem Touchscreen)
-
-```bash
-swiftc -swift-version 5 -O main.swift -o touchscreen-driver \
-  -framework Cocoa -framework IOKit
-codesign -s "Aronax Local Codesign" --force \
-  -i de.aronax.touchscreen-driver touchscreen-driver
-```
-
-`-swift-version 5` vermeidet Swift-6-Strict-Concurrency-Fehler bei den
-globalen Variablen, die der C-Callback von IOHIDManager referenziert (siehe
-unten, "Architektur").
-
-Live läuft es unter `~/touchscreen-driver/` als LaunchAgent
-`de.aronax.touchscreen-driver` (RunAtLoad, KeepAlive, Logs unter
-`~/Library/Logs/touchscreen-driver/`).
-
-```bash
-launchctl bootout gui/$(id -u)/de.aronax.touchscreen-driver
-# neu bauen (s.o.), dann:
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.aronax.touchscreen-driver.plist
-```
-
-### Freigaben (Systemeinstellungen -> Datenschutz & Sicherheit)
-
-Nötig, jeweils für `touchscreen-driver`:
-
-- **Eingabeüberwachung** - zum Lesen der rohen HID-Reports
-- **Bedienungshilfen** - zum Senden von Maus-/Tastatur-Events
-
-Beim allerersten Start (bzw. wenn die Einträge gelöscht wurden) fragt macOS
-danach - `AXIsProcessTrustedWithOptions(prompt: true)` löst den Dialog beim
-Programmstart aus. Bleibt die Bedienungshilfen-Freigabe aus, läuft der
-Treiber trotzdem und liest auch Touch-Events, aber macOS verwirft alle
-gesendeten Maus-/Tastatur-Events **stillschweigend** - er weist beim Start
-im Log darauf hin.
-
-### Warum die Signatur mit eigenem Zertifikat wichtig ist
-
-macOS bindet TCC-Freigaben an das "Designated Requirement" der Binary. Bei
-**ad-hoc**-Signatur (`codesign -s -`) ist das der Datei-Hash:
+macOS binds TCC permissions (Accessibility, Input Monitoring) to the
+binary's *designated requirement*. With an **ad-hoc** signature
+(`codesign -s -`) that requirement is the file hash:
 
 ```
 designated => cdhash H"7ff6caf7f974d17196eb09e3fc46bad45a82313e"
 ```
 
-Damit macht **jeder Rebuild beide Freigaben ungültig** - man muss die
-Einträge in den Systemeinstellungen löschen und neu bestätigen, bei jeder
-Code-Änderung. Mit einem eigenen (selbstsignierten) Zertifikat hängt es
-stattdessen an Identifier + Zertifikat:
+So **every rebuild invalidates both permissions** — you have to delete the
+entries in System Settings and grant them again, on every single code
+change. With your own (self-signed) certificate the requirement is bound to
+identifier plus certificate instead:
 
 ```
 designated => identifier "de.aronax.touchscreen-driver" and
-              certificate leaf = H"fe19213beeec4cd918d13aa3bc9bccf82d9e00f7"
+              certificate leaf = H"…"
 ```
 
-Beides bleibt über Rebuilds hinweg gleich, die Freigaben überleben also.
-Verifiziert am 05.09.2026: Rebuild mit nachweislich geändertem CDHash
-(`c3a46b…` → `094e1a9b…`), Freigabe blieb gültig.
+Both stay stable across rebuilds, so the permissions survive. Verified by
+rebuilding with a demonstrably different CDHash and confirming the grant
+still held.
 
-**Zertifikat anlegen** (einmalig, nur über die GUI zuverlässig - der Weg
-über `openssl` + `security import` scheitert daran, dass der private
-Schlüssel nicht als Identität ankommt):
+**Creating the certificate** (once — reliable only through the GUI; going
+via `openssl` + `security import` fails, the certificate arrives but the
+private key does not, so no usable identity is formed):
 
-1. Schlüsselbundverwaltung → Menü **Schlüsselbundverwaltung →
-   Zertifikatsassistent → "Zertifikat erstellen…"**
-2. Name `Aronax Local Codesign`, Identitätstyp **Selbstsigniertes
-   Root-Zertifikat**, Zertifikatstyp **Codesignatur**, Haken bei
-   **"Standardwerte überschreiben"**
-3. Gültigkeit z.B. 3650 Tage, Seriennummer 1, Schlüsselverwendung
-   "Signatur", erweiterte Schlüsselverwendung "Codesignatur",
-   Schlüsselbund **Anmeldung**
+1. Keychain Access → menu **Keychain Access → Certificate Assistant →
+   "Create a Certificate…"**
+2. Name of your choice, identity type **Self Signed Root**, certificate type
+   **Code Signing**, tick **"Let me override defaults"**
+3. Validity e.g. 3650 days, serial number 1, key usage "Signature", extended
+   key usage "Code Signing", keychain **login**
 
-Das Zertifikat bleibt dabei `CSSMERR_TP_NOT_TRUSTED` (selbstsignierte Roots
-vertraut macOS nicht automatisch) und taucht deshalb bei
-`security find-identity -v -p codesigning` **nicht** auf - ohne `-v` schon.
-Für `codesign` reicht das trotzdem, es muss nichts als vertrauenswürdig
-markiert werden.
+The certificate stays `CSSMERR_TP_NOT_TRUSTED` — macOS does not
+automatically trust self-signed roots — and therefore does **not** show up
+under `security find-identity -v -p codesigning`, though it does without
+`-v`. `codesign` works with it regardless; nothing needs to be marked as
+trusted.
 
-## Architektur (kurz)
+### Packaging
 
-`main.swift` nutzt `IOHIDManager`, um sich auf Vendor/Product-ID des
-Controllers zu matchen und rohe `IOHIDValue`-Updates zu bekommen. Die
-Callback-Funktionen (`hidInputCallback`, `hidDeviceMatchedCallback`) sind
-**top-level Funktionen ohne Closure-Capture**, weil `IOHIDValueCallback` ein
-C-Funktionszeiger ist - sie referenzieren stattdessen globale `var`s
-(`slots`, `mode`, `cookieToSlotField`, ...). Deshalb auch `-swift-version 5`
-beim Bauen: Swift 6 würde die globalen `var`-Zugriffe aus dem C-Callback
-sonst als Concurrency-Verstoß werten.
+The `.pkg` is **unsigned**. A Gatekeeper-accepted package would need a
+"Developer ID Installer" certificate from Apple; a self-signed code signing
+certificate is not enough. Install via right click → Open.
 
-Pro Finger-Slot (max. 10, dynamisch aus dem HID-Report-Descriptor beim
-Verbinden ermittelt, siehe `hidDeviceMatchedCallback`) wird X/Y/Tip-Switch
-getrackt. Ein Zustandsautomat (`GestureMode`) entscheidet je nach Anzahl
-aktiver Finger, ob ein Klick, ein Scroll oder eine Zoom-Geste rausgeht:
+The `postinstall` script removes the old command line version (LaunchAgent)
+and terminates a running instance of the app before starting the new one —
+otherwise an update would leave two drivers running and every click would
+land twice.
 
-- `idle` - nichts aktiv
-- `single` - ein Finger, Zeiger/Klick/Ziehen
-- `twoFinger` - Geste läuft (Art einmalig festgelegt, siehe oben)
-- `suppressed` - Finger liegen noch auf, aber es wird keine neue Geste mehr
-  begonnen, bis wirklich alle Finger weg sind. Ohne diesen Zustand löst
-  jedes Heben eines einzelnen Fingers am Ende einer Zwei-Finger-Geste einen
-  Phantom-Klick aus (der Automat sieht "1 Finger aktiv" bei `idle`).
+## Files
 
-Der Mausklick bei Ein-Finger-Berührung wird um 35ms zurückgehalten: kommt in
-dieser Zeit ein zweiter Finger dazu, war es von Anfang an eine Geste und es
-wird gar nicht geklickt (zwei Finger setzen nie exakt gleichzeitig auf).
-Geht der Finger vorher wieder hoch (schneller Tap), wird der Klick sofort
-nachgeholt - kostet also keine spürbare Latenz.
+- `app/Sources/TouchEngine.swift` — the gesture engine (reads HID, posts
+  events). The substance of the project.
+- `app/Sources/AppDelegate.swift` — menu bar interface
+- `app/Sources/Settings.swift` — settings in `UserDefaults`
+- `app/Info.plist`, `app/build-app.sh`, `app/build-pkg.sh`,
+  `app/pkg-scripts/postinstall` — bundle, build, packaging
+- `dump-elements.swift` — diagnostic tool, lists all HID elements of the
+  connected device (report IDs, cookies, usage pages, value ranges)
+- `main.swift`, `de.aronax.touchscreen-driver.plist` — **obsolete**: the
+  earlier command line version and its LaunchAgent, kept for reference. It
+  is not maintained; everything above describes the app.
+- `NOTES.de.md` — development log in German: how this came about, which
+  decisions were made and which dead ends were hit
 
-Beim Abziehen des Geräts (`IOHIDManagerRegisterDeviceRemovalCallback`) wird
-alles zurückgesetzt und ein eventuell offener `leftMouseDown` mit einem
-`leftMouseUp` geschlossen - sonst bliebe die linke Maustaste systemweit
-"gedrückt" hängen, wenn man das Kabel mitten in einer Berührung zieht.
+## Architecture
+
+`TouchEngine.swift` uses `IOHIDManager` to match touch screen devices by
+usage page and to receive raw `IOHIDValue` updates. The callbacks
+(`hidInputCallback`, `hidDeviceMatchedCallback`, …) are **top level
+functions without closure capture**, because `IOHIDValueCallback` is a C
+function pointer; they reach global `var`s (`slots`, `mode`,
+`cookieToSlotField`, …) instead. That is also why everything is built with
+`-swift-version 5`: Swift 6 would treat those global accesses from a C
+callback as a concurrency violation.
+
+Per finger slot (up to 10, discovered from the HID report descriptor on
+connect) X, Y and tip switch are tracked. A state machine decides, based on
+the number of active fingers, whether a click, a scroll or a zoom goes out:
+
+- `idle` — nothing active
+- `single` — one finger: pointer, click, drag
+- `twoFinger` — a gesture is running (classified once, see above)
+- `suppressed` — fingers are still down, but no new gesture is started until
+  *all* of them are lifted. Without this state, lifting one finger at the end
+  of a two finger gesture triggers a phantom click, because the machine sees
+  "one finger active" while `idle`.
+
+The click of a single finger touch is **held back for 35 ms**: if a second
+finger arrives within that window it was a gesture all along and no click is
+emitted at all (two fingers never land at exactly the same moment). If the
+finger lifts first — a quick tap — the click is emitted immediately, so there
+is no perceptible latency.
+
+On device removal (`IOHIDManagerRegisterDeviceRemovalCallback`) everything is
+reset and a pending `leftMouseDown` is closed with a `leftMouseUp` —
+otherwise the left mouse button would stay logically held down system-wide
+if you unplug the cable mid-touch.
+
+### Two device-level pitfalls worth knowing
+
+**Keyboard layout for Cmd+±.** macOS resolves menu shortcuts through
+`charactersIgnoringModifiers`, which is derived from the **physical key code
+plus the current keyboard layout** — not from a character injected with
+`keyboardSetUnicodeString()` (that only affects text input). A hardcoded US
+key code for "+"/"-" hits the wrong key on, say, a German layout and the
+zoom shortcut never fires. The driver therefore looks up the key that
+produces "+" and "-" in the *current* layout at runtime, via `UCKeyTranslate`
+and `TISCopyCurrentKeyboardLayoutInputSource`.
+
+**Report order on touch down.** The reference controller sends X/Y
+coordinates **before** the tip switch down report of the same touch.
+Resetting "have X / have Y" flags on touch down — the obvious way to avoid
+stale coordinates — therefore discards the fresh coordinates that just
+arrived, before the activation check sees them, and touch never triggers at
+all. The code keeps the flags sticky instead, which works with either order.
+
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE).

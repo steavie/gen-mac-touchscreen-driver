@@ -1,6 +1,11 @@
-// Einmaliges Diagnose-Tool: listet alle HID-Elemente des Touch-Controllers auf,
-// um zu prüfen ob Multitouch (Contact Identifier / Contact Count / mehrere
-// Finger-Collections) überhaupt gemeldet wird.
+// gen-mac-touchscreen-driver — HID diagnostic tool
+// Copyright (C) 2026 Stefan Kriesel
+// Licensed under the GNU General Public License v3.0, see LICENSE.
+//
+// Lists every HID element of the touch controller, to see what a device
+// actually reports: report IDs, cookies, usage pages and value ranges — and
+// whether multitouch (contact identifier / contact count / several finger
+// collections) is reported at all.
 
 import Foundation
 import IOKit

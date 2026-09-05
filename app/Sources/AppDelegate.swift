@@ -1,6 +1,13 @@
-// Menüleisten-Oberfläche. Der Treiber läuft im selben Prozess (siehe
-// TouchEngine), deshalb wirken Änderungen hier sofort, ohne Neustart und
-// ohne Konfigurationsdatei.
+// gen-mac-touchscreen-driver — menu bar interface
+// Copyright (C) 2026 Stefan Kriesel
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the
+// Free Software Foundation, either version 3 of the License, or (at your
+// option) any later version. See LICENSE for details.
+//
+// The driver runs in the same process (see TouchEngine), so changes here take
+// effect immediately, without a restart and without a config file.
 
 import Cocoa
 import ServiceManagement
@@ -17,8 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
-        // Ohne das grauen die Statuszeilen aus, weil sie keine Aktion haben -
-        // wir steuern die Darstellung stattdessen selbst.
+        // Without this the status lines would be greyed out because they have
+        // no action; we control their appearance ourselves instead.
         menu.autoenablesItems = false
         statusItem.menu = menu
 
@@ -34,19 +41,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         TouchEngine.stop()
     }
 
-    /// Fehlt eine Freigabe oder läuft der Treiber nicht, wird ein
-    /// durchgestrichenes Symbol gezeigt - sonst sieht man von außen nicht,
-    /// dass der Treiber zwar läuft, seine Events aber stillschweigend
-    /// verworfen werden.
+    /// If a permission is missing or the driver is not running, a struck
+    /// through icon is shown — otherwise there is no outward sign that the
+    /// driver runs but has all its events silently discarded.
     ///
-    /// Wichtig: Nicht jedes SF-Symbol existiert auf jeder macOS-Version
-    /// (`hand.tap.slash` z.B. nicht). Ein nicht gefundenes Symbol ergibt ein
-    /// leeres Bild - und damit ein unsichtbares Menüleisten-Symbol. Deshalb
-    /// hier immer ein Textfallback.
+    /// Important: not every SF Symbol exists on every macOS version
+    /// (`hand.tap.slash` does not, here). A symbol that is not found yields an
+    /// empty image — and thus an invisible menu bar item. Hence the text
+    /// fallback.
     private func updateStatusItemAppearance() {
         guard let button = statusItem.button else { return }
-        // TSD_FORCE_WARN=1 erzwingt die Warndarstellung, damit sich dieser
-        // sonst selten auftretende Zustand testen lässt.
+        // TSD_FORCE_WARN=1 forces the warning appearance, so this otherwise
+        // rare state can actually be tested.
         let forceWarn = ProcessInfo.processInfo.environment["TSD_FORCE_WARN"] != nil
         let healthy = TouchEngine.isRunning && TouchEngine.accessibilityTrusted && !forceWarn
         let candidates = healthy ? ["hand.tap", "hand.point.up.left", "cursorarrow.click"]
@@ -58,13 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if let image {
             if healthy {
-                // Im Normalfall Schablonenbild: passt sich hell/dunkel an.
+                // Normal case: template image, adapts to light/dark.
                 image.isTemplate = true
                 button.image = image
             } else {
-                // Im Fehlerfall bewusst rot statt Schablone - ein
-                // monochromes durchgestrichenes Symbol übersieht man in der
-                // Menüleiste sonst leicht.
+                // Error case: deliberately red rather than a template — a
+                // monochrome struck-through symbol is easy to miss among the
+                // other menu bar icons.
                 let tinted = image.withSymbolConfiguration(
                     NSImage.SymbolConfiguration(paletteColors: [.systemRed])) ?? image
                 tinted.isTemplate = false
@@ -83,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : (TouchEngine.isRunning ? "Bedienungshilfen-Freigabe fehlt" : "Treiber gestoppt")
     }
 
-    // MARK: - Menü
+    // MARK: - Menu
 
     func menuWillOpen(_ menu: NSMenu) {
         rebuild(menu)
@@ -93,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func rebuild(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // --- Status ---
+        // --- status ---
         menu.addItem(statusLine(
             ok: TouchEngine.isRunning,
             text: TouchEngine.isRunning ? "Treiber läuft" : "Treiber gestoppt"))
@@ -117,12 +123,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- Ziel-Display ---
+        // --- target display ---
         let displayItem = NSMenuItem(title: "Display: \(TouchEngine.targetDisplayLabel)", action: nil, keyEquivalent: "")
         displayItem.submenu = buildDisplayMenu()
         menu.addItem(displayItem)
 
-        // --- Scrollrichtung ---
+        // --- scroll direction ---
         let scrollItem = NSMenuItem(
             title: "Scrollen: " + (Settings.invertScrollY ? "klassisch" : "natürlich"),
             action: nil, keyEquivalent: "")
@@ -131,10 +137,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- Regler ---
-        // Zoom: der gespeicherte Wert ist die nötige Abstandsänderung pro
-        // Zoom-Schritt, also je KLEINER desto empfindlicher. Der Regler wird
-        // deshalb umgedreht dargestellt.
+        // --- sliders ---
+        // Zoom: the stored value is the distance change required per zoom
+        // step, so SMALLER means more sensitive. The slider is therefore
+        // presented inverted.
         menu.addItem(sliderItem(
             title: "Zoom-Empfindlichkeit",
             min: 15, max: 80, value: Settings.zoomStepPixels, inverted: true,
@@ -149,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- Sonstiges ---
+        // --- misc ---
         let loginItem = NSMenuItem(title: "Bei Anmeldung starten",
                                    action: #selector(toggleLoginItem), keyEquivalent: "")
         loginItem.target = self
@@ -179,9 +185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    /// Statuszeile mit farbigem Punkt: grün wenn alles läuft, rot wenn nicht.
-    /// Die Zeile ist nicht anklickbar, wird aber trotzdem normal (nicht grau)
-    /// dargestellt - dafür sorgt `menu.autoenablesItems = false`.
+    /// Status line with a coloured dot: green when running, red when not.
+    /// The line is not clickable but still rendered normally rather than
+    /// greyed out — that is what `menu.autoenablesItems = false` is for.
     private func statusLine(ok: Bool, text: String) -> NSMenuItem {
         let attributed = NSMutableAttributedString(
             string: "●  ",
@@ -247,9 +253,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return sub
     }
 
-    /// Regler direkt im Menü. `inverted` dreht die Skala um, damit "weiter
-    /// rechts" immer "empfindlicher" bedeutet, auch wenn der gespeicherte
-    /// Wert genau andersherum wirkt.
+    /// A slider inside the menu. `inverted` mirrors the scale so that
+    /// "further right" always means "more sensitive", even where the stored
+    /// value works the other way round.
     private func sliderItem(title: String, min: Double, max: Double, value: Double,
                             inverted: Bool, format: @escaping (Double) -> String,
                             action: Selector) -> NSMenuItem {
@@ -271,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         slider.tag = inverted ? 1 : 0
         view.addSubview(slider)
 
-        // Label beim Ziehen mitführen
+        // keep the label in sync while dragging
         sliderLabels[ObjectIdentifier(slider)] = (label, title, format)
 
         item.view = view
@@ -286,12 +292,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Wert vom Regler in den zu speichernden Wert übersetzen (ggf. gespiegelt).
+    /// Translate the slider position into the value to store (mirrored if needed).
     private func storedValue(from slider: NSSlider) -> Double {
         slider.tag == 1 ? (slider.minValue + slider.maxValue - slider.doubleValue) : slider.doubleValue
     }
 
-    // MARK: - Aktionen
+    // MARK: - Actions
 
     @objc private func zoomSliderChanged(_ sender: NSSlider) {
         let value = storedValue(from: sender)
@@ -335,13 +341,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try SMAppService.mainApp.register()
             }
         } catch {
-            NSLog("Anmeldeobjekt konnte nicht geändert werden: %@", error.localizedDescription)
+            NSLog("Could not change the login item: %@", error.localizedDescription)
         }
     }
 
     @objc private func requestAccessibility() {
-        // Löst den Systemdialog aus, falls die Freigabe noch nie erteilt oder
-        // wieder entfernt wurde.
+        // Triggers the system dialog if the permission was never granted or
+        // has been removed again.
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {

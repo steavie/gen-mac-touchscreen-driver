@@ -1,22 +1,29 @@
-// Gesten-Engine: liest die rohen USB-HID-Digitizer-Reports des Touchscreens
-// (Vendor wch.cn, USB2IIC_CTP_CONTROL, 0x1a86:0xe2e3) und erzeugt daraus
-// echte macOS-Events.
+// gen-mac-touchscreen-driver — gesture engine
+// Copyright (C) 2026 Stefan Kriesel
 //
-// Hintergrund: macOS hat keinen eingebauten Klassentreiber, der externe
-// USB-HID-Touchscreens (UsagePage 0x0D "Digitizer", Usage 0x04 "Touch Screen")
-// als Zeiger/Klick interpretiert - anders als Windows.
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the
+// Free Software Foundation, either version 3 of the License, or (at your
+// option) any later version. See LICENSE for details.
 //
-//   1 Finger        = Zeiger, Klick, Ziehen, Doppel-/Dreifachtipp
-//   2 Finger kurz   = Rechtsklick
-//   2 Finger ziehen = eine Geste, die zu Beginn EINMAL als Scroll ODER Zoom
-//                     festgelegt und bis zum Loslassen beibehalten wird
-//   3+ Finger       = ignoriert (unterdrückt, bis alle Finger weg sind)
+// Reads the raw USB HID digitizer reports of a touch screen and synthesizes
+// real macOS events from them.
 //
-// Die Callbacks von IOHIDManager und CoreGraphics sind C-Funktionszeiger und
-// können nichts einfangen. Deshalb sind Zustand und Callbacks hier bewusst
-// auf Dateiebene global und nicht in einer Klasse gekapselt - und deshalb
-// wird mit -swift-version 5 gebaut (Swift 6 würde die globalen Zugriffe aus
-// den C-Callbacks als Concurrency-Verstoß werten).
+// Background: macOS ships no class driver that interprets external USB HID
+// touch screens (usage page 0x0D "Digitizer", usage 0x04 "Touch Screen") as
+// pointer and click — unlike Windows.
+//
+//   1 finger        = pointer, click, drag, double/triple tap
+//   2 fingers, tap  = right click
+//   2 fingers, drag = a gesture, classified ONCE as either scroll or zoom
+//                     and kept that way until released
+//   3+ fingers      = ignored (suppressed until all fingers are lifted)
+//
+// The IOHIDManager and CoreGraphics callbacks are C function pointers and
+// cannot capture anything. State and callbacks are therefore deliberately
+// file-scope globals rather than wrapped in a class — and that is also why
+// this is built with -swift-version 5 (Swift 6 would treat those global
+// accesses from a C callback as a concurrency violation).
 
 import Cocoa
 import IOKit
@@ -24,16 +31,16 @@ import IOKit.hid
 import ApplicationServices
 import Carbon.HIToolbox
 
-// Erkannt wird jedes USB-HID-Gerät, das sich als Touchscreen ausweist -
-// nicht ein bestimmtes Modell. Die Finger-Slots werden ohnehin zur Laufzeit
-// aus dem HID-Report-Descriptor gelesen, nicht angenommen, und praktisch
-// alle diese Panels sprechen das Standard-"Windows Precision Touch"-Layout.
+// Matches any USB HID device that identifies as a touch screen, not one
+// particular model. Finger slots are read from the HID report descriptor at
+// runtime rather than assumed, and virtually all of these panels speak the
+// standard "Windows Precision Touch" layout.
 //
-// Grafiktabletts liegen auf derselben Usage Page, melden aber Usage 0x02
-// (Stift) statt 0x04 (Touch Screen) und werden hier deshalb nicht erfasst.
+// Graphics tablets live on the same usage page but report usage 0x02 (pen)
+// instead of 0x04 (touch screen), so they are not picked up here.
 //
-// Entwickelt und geprüft mit: 7"-HDMI-Panel aus der lcdwiki/LCD-show-Familie,
-// Controller "USB2IIC_CTP_CONTROL" (wch.cn, 0x1a86:0xe2e3), 5 Kontakte.
+// Developed and verified with: 7" HDMI panel of the lcdwiki/LCD-show family,
+// controller "USB2IIC_CTP_CONTROL" (wch.cn, 0x1a86:0xe2e3), 5 contacts.
 let digitizerUsagePage = 0x0D
 let touchScreenUsage = 0x04
 
@@ -43,9 +50,9 @@ func vlog(_ message: @autoclosure () -> String) {
 
 // MARK: - Displays
 
-/// Stabile Kennung eines physischen Displays aus dessen EDID. Anders als die
-/// CGDirectDisplayID und anders als der Index in der Display-Liste bleibt sie
-/// über Umstecken, Neustarts und Änderungen der Anordnung gleich.
+/// Stable identity of a physical display, taken from its EDID. Unlike the
+/// CGDirectDisplayID and unlike the index in the display list, it survives
+/// replugging, reboots and rearranging.
 struct DisplayKey: Equatable, CustomStringConvertible {
     let vendor: UInt32
     let model: UInt32
@@ -86,10 +93,9 @@ func activeDisplays() -> [DisplayInfo] {
     return ids.map { DisplayInfo(id: $0, bounds: CGDisplayBounds($0), key: DisplayKey($0)) }
 }
 
-/// Auswahl in dieser Reihenfolge: feste EDID-Kennung aus den Einstellungen,
-/// sonst automatisch das Display, das nicht der Hauptbildschirm ist. Die
-/// Automatik ist nur eine Notlösung - sie zielt daneben, sobald der
-/// Touchscreen selbst zum Hauptbildschirm gemacht wird.
+/// Selection order: the EDID identity pinned in the settings, otherwise the
+/// display that is not the main one. That fallback aims at the wrong screen
+/// as soon as the touch screen itself becomes the main display.
 func pickTargetDisplay(_ displays: [DisplayInfo]) -> DisplayInfo? {
     let setting = Settings.targetDisplay
     if setting != "auto", let key = DisplayKey(parsing: setting) {
@@ -105,6 +111,9 @@ var targetBounds = CGRect.zero
 var haveTarget = false
 var targetDescription = "—"
 
+/// Called at startup and on every display change (arrangement, resolution,
+/// plugging). Without this the coordinate mapping would stay wrong after the
+/// first rearrangement until the app is restarted.
 func resolveTargetDisplay() {
     guard let target = pickTargetDisplay(activeDisplays()) else {
         if !haveTarget { targetDescription = "nicht gefunden" }
@@ -113,15 +122,15 @@ func resolveTargetDisplay() {
     targetBounds = target.bounds
     haveTarget = true
     targetDescription = target.label
-    vlog("Ziel-Display: \(target.label) \(target.key)")
+    vlog("Target display: \(target.label) \(target.key)")
     TouchEngine.notifyStatusChanged()
 }
 
-// MARK: - Zustand
+// MARK: - State
 
 struct TouchSlot {
     var down = false
-    var x: Double = 0   // normalisiert 0..1
+    var x: Double = 0   // normalized 0..1
     var y: Double = 0
     var haveX = false
     var haveY = false
@@ -130,11 +139,11 @@ struct TouchSlot {
 enum SlotField { case tip, x, y }
 
 enum GestureMode {
-    case idle          // nichts aktiv
-    case single        // genau ein Finger, Zeiger/Klick
-    case twoFinger     // Geste läuft
-    case suppressed    // Finger noch drauf, aber keine neue Geste beginnen,
-                       // bis wirklich alle Finger weg sind
+    case idle          // nothing active
+    case single        // exactly one finger: pointer/click
+    case twoFinger     // a gesture is running
+    case suppressed    // fingers still down, but do not start a new
+                       // gesture until all of them are lifted
 }
 
 enum TwoFingerKind { case undecided, scroll, zoom }
@@ -144,28 +153,28 @@ var slotXRange: [(min: CFIndex, max: CFIndex)] = []
 var slotYRange: [(min: CFIndex, max: CFIndex)] = []
 var cookieToSlotField: [IOHIDElementCookie: (slot: Int, field: SlotField)] = [:]
 
-/// Seit der Erkennung über Usage Page/Usage können mehrere Geräte passen.
-/// Wir binden uns an das erste und ignorieren weitere: die Finger-Slots sind
-/// global, ein zweites Gerät würde sie überschreiben - und Element-Cookies
-/// sind pro Gerät vergeben, könnten sich zwischen Geräten also überschneiden.
+/// Since matching happens by usage page, several devices can qualify. We bind
+/// to the first and ignore the rest: the finger slots are global and a second
+/// device would overwrite them — and element cookies are assigned per device,
+/// so they could collide between devices.
 var boundDevice: IOHIDDevice? = nil
 var boundDeviceName = "—"
 
 var mode: GestureMode = .idle
 
-// Ein-Finger-Zustand
+// Single finger state
 var singleSlot: Int? = nil
 var singleDownPosted = false
 var singleDownPoint = CGPoint.zero
 var lastSinglePoint = CGPoint.zero
 var pendingDownWork: DispatchWorkItem? = nil
 
-// Klickfolge (einfach/doppelt/dreifach)
+// Click sequence (single/double/triple)
 var lastClickTime: TimeInterval = 0
 var lastClickPoint = CGPoint.zero
 var currentClickState: Int64 = 1
 
-// Zwei-Finger-Zustand
+// Two finger state
 var pairSlots: [Int] = []
 var twoKind: TwoFingerKind = .undecided
 var gestureStartAvg = CGPoint.zero
@@ -175,17 +184,17 @@ var lastZoomSpread: Double = 0
 var scrollRemainderX: Double = 0
 var scrollRemainderY: Double = 0
 var twoFingerStart: TimeInterval = 0
-/// Gesetzt, wenn eine Zwei-Finger-Berührung endete, ohne je zu einer Scroll-
-/// oder Zoom-Geste zu werden - also ein Zwei-Finger-Tipp war. Der Rechtsklick
-/// wird erst ausgelöst, wenn wirklich alle Finger weg sind (sonst käme er
-/// mitten im Abheben des zweiten Fingers).
+/// Set when a two finger touch ended without ever becoming a scroll or zoom
+/// gesture — i.e. it was a two finger tap. The right click is only emitted
+/// once all fingers are up, otherwise it would land halfway through lifting
+/// the second finger.
 var pendingRightClick: CGPoint? = nil
 
 let eventSource = CGEventSource(stateID: .hidSystemState)
 
 func mappedPoint(slot idx: Int) -> CGPoint {
-    // Defensiv: nach einer Neuverbindung kann sich die Slot-Liste ändern,
-    // während noch ein alter Index herumliegt.
+    // Defensive: after a reconnect the slot list can change while an old
+    // index is still around.
     guard slots.indices.contains(idx) else { return lastSinglePoint }
     let s = slots[idx]
     return CGPoint(
@@ -194,12 +203,12 @@ func mappedPoint(slot idx: Int) -> CGPoint {
     )
 }
 
-// MARK: - Event-Ausgabe
+// MARK: - Emitting events
 
-/// `clickState` ist die laufende Nummer innerhalb einer Klickfolge (1 =
-/// einfach, 2 = doppelt, 3 = dreifach). Ohne dieses Feld erkennt macOS zwei
-/// schnell aufeinanderfolgende Klicks NICHT als Doppelklick - man könnte
-/// dann z.B. im Finder nichts per Doppeltipp öffnen.
+/// `clickState` is the position within a click sequence (1 = single,
+/// 2 = double, 3 = triple). Without this field macOS does NOT recognize two
+/// quick successive clicks as a double click — you could not, for instance,
+/// open anything in Finder by double tapping.
 func postMouse(_ type: CGEventType, at point: CGPoint,
                button: CGMouseButton = .left, clickState: Int64 = 1) {
     guard let event = CGEvent(mouseEventSource: eventSource, mouseType: type,
@@ -211,15 +220,15 @@ func postMouse(_ type: CGEventType, at point: CGPoint,
 func postRightClick(at point: CGPoint) {
     postMouse(.rightMouseDown, at: point, button: .right)
     postMouse(.rightMouseUp, at: point, button: .right)
-    vlog("RECHTSKLICK \(point)")
+    vlog("RIGHT CLICK \(point)")
 }
 
-/// Scrollt pixelgenau. Die Nachkommastellen werden aufgesammelt statt
-/// weggerundet, sonst geht bei langsamem Ziehen laufend Bewegung verloren.
+/// Scrolls by pixels. Fractions are accumulated instead of rounded away,
+/// otherwise slow drags keep losing motion.
 func postScroll(dx: Double, dy: Double) {
-    // Standard ist macOS-Verhalten: der Inhalt folgt dem Finger. Y wächst in
-    // Quartz-Koordinaten nach unten, die Scrollrad-Achsen von CGEvent zeigen
-    // jeweils entgegengesetzt dazu.
+    // Default is macOS behaviour: the content follows the finger. Y grows
+    // downwards in Quartz coordinates, and the CGEvent scroll wheel axes each
+    // point the opposite way.
     let dirY: Double = Settings.invertScrollY ? -1 : 1
     let dirX: Double = Settings.invertScrollX ? 1 : -1
 
@@ -237,18 +246,17 @@ func postScroll(dx: Double, dy: Double) {
     vlog("SCROLL x=\(ix) y=\(iy)")
 }
 
-// Echtes Pinch-to-Zoom braucht private Multitouch-APIs (bewusst nicht
-// genutzt). Näherung: Cmd+Plus / Cmd+Minus, das viele Apps (Safari,
-// Vorschau, Fotos, Browser) als Zoom-Shortcut unterstützen - Finder z.B.
-// nicht, der hat dafür keinen Shortcut.
+// Real pinch-to-zoom would need private multitouch APIs (deliberately not
+// used). Approximation: Cmd+Plus / Cmd+Minus, which many apps (Safari,
+// Preview, Photos, browsers) support as a zoom shortcut — Finder does not,
+// it has no such shortcut.
 //
-// Wichtig: Menü-Shortcuts (NSMenuItem keyEquivalent-Matching) werden von
-// AppKit über "charactersIgnoringModifiers" aufgelöst, das aus dem
-// PHYSISCHEN Tastencode + aktuellem Tastaturlayout berechnet wird - NICHT
-// über ein per keyboardSetUnicodeString() gesetztes Zeichen (das wirkt nur
-// für echte Text-Eingabe, nicht für Shortcut-Matching). Deshalb muss hier
-// wirklich der Tastencode ermittelt werden, der im AKTUELLEN Layout "+"
-// bzw. "-" erzeugt, statt einen festen (US-)Code zu raten.
+// Important: AppKit resolves menu shortcuts (NSMenuItem keyEquivalent
+// matching) through "charactersIgnoringModifiers", which is derived from the
+// PHYSICAL key code plus the current keyboard layout — NOT from a character
+// set via keyboardSetUnicodeString() (that only affects text input, not
+// shortcut matching). So the key that produces "+" or "-" in the CURRENT
+// layout has to be looked up, rather than guessing a fixed US key code.
 func keyCodeForCharacter(_ target: Character) -> (keyCode: CGKeyCode, needsShift: Bool)? {
     guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return nil }
     guard let dataPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
@@ -278,9 +286,9 @@ func keyCodeForCharacter(_ target: Character) -> (keyCode: CGKeyCode, needsShift
     }
 }
 
-/// Einmal ermittelt und gemerkt - das Durchprobieren aller Tastencodes lohnt
-/// sich nicht pro Zoom-Schritt. Bei Layout-Wechsel im laufenden Betrieb
-/// müsste die App neu gestartet werden.
+/// Looked up once and remembered — scanning every key code is not worth
+/// repeating per zoom step. Changing the layout while running requires a
+/// restart of the app.
 let zoomInKey = keyCodeForCharacter("+")
 let zoomOutKey = keyCodeForCharacter("-")
 
@@ -297,23 +305,23 @@ func postZoomKey(zoomIn: Bool) {
     vlog(zoomIn ? "ZOOM-IN" : "ZOOM-OUT")
 }
 
-// MARK: - Ein-Finger-Logik
+// MARK: - Single finger logic
 
 func cancelPendingDown() {
     pendingDownWork?.cancel()
     pendingDownWork = nil
 }
 
-/// Setzt den zurückgehaltenen Mausklick ab (per Timer oder vorgezogen, wenn
-/// der Finger vorher wieder hochgeht).
+/// Emits the held-back mouse click, either from the timer or pulled forward
+/// when the finger lifts before it fires.
 func commitSingleDown() {
     guard mode == .single, !singleDownPosted else { return }
     cancelPendingDown()
     singleDownPosted = true
 
-    // Gehört dieser Tipp noch zur vorherigen Klickfolge (Doppel-/Dreifach-
-    // tipp)? Maßstab ist das System-Doppelklick-Intervall plus eine
-    // großzügige Ortstoleranz.
+    // Does this tap still belong to the previous click sequence (double or
+    // triple tap)? The yardstick is the system double click interval plus a
+    // generous position tolerance.
     let now = ProcessInfo.processInfo.systemUptime
     let distance = hypot(singleDownPoint.x - lastClickPoint.x, singleDownPoint.y - lastClickPoint.y)
     if now - lastClickTime <= NSEvent.doubleClickInterval && Double(distance) <= Settings.doubleClickSlop {
@@ -326,8 +334,7 @@ func commitSingleDown() {
 
     postMouse(.leftMouseDown, at: singleDownPoint, clickState: currentClickState)
     vlog("DOWN \(singleDownPoint) clickState=\(currentClickState)")
-    // Falls sich der Finger während der Verzögerung schon bewegt hat,
-    // die Bewegung nachziehen.
+    // If the finger already moved during the delay, catch that up.
     if lastSinglePoint != singleDownPoint {
         postMouse(.leftMouseDragged, at: lastSinglePoint, clickState: currentClickState)
     }
@@ -345,9 +352,9 @@ func beginSingle(slot idx: Int) {
     DispatchQueue.main.asyncAfter(deadline: .now() + Settings.singleTouchDelay, execute: work)
 }
 
-/// Beendet eine Ein-Finger-Berührung. `click: false` verwirft einen noch
-/// nicht abgesetzten Klick komplett (z.B. weil daraus eine Zwei-Finger-Geste
-/// wurde oder das Gerät abgezogen wurde).
+/// Ends a single finger touch. `click: false` discards a not-yet-emitted
+/// click entirely (because it turned into a two finger gesture, or the device
+/// was unplugged).
 func endSingle(click: Bool) {
     guard mode == .single else {
         cancelPendingDown()
@@ -365,7 +372,7 @@ func endSingle(click: Bool) {
     singleSlot = nil
 }
 
-// MARK: - Zwei-Finger-Logik
+// MARK: - Two finger logic
 
 func beginTwoFinger(active: [Int], avg: CGPoint, spread: Double) {
     mode = .twoFinger
@@ -381,8 +388,8 @@ func beginTwoFinger(active: [Int], avg: CGPoint, spread: Double) {
     pendingRightClick = nil
 }
 
-/// Beim Verlassen einer Zwei-Finger-Berührung prüfen, ob es ein kurzer Tipp
-/// war (nie zu Scroll/Zoom geworden) - dann ist ein Rechtsklick fällig.
+/// When leaving a two finger touch, check whether it was a short tap (never
+/// became scroll or zoom) — in that case a right click is due.
 func noteTwoFingerEnd() {
     guard mode == .twoFinger, twoKind == .undecided else { return }
     if ProcessInfo.processInfo.systemUptime - twoFingerStart <= Settings.twoFingerTapMaxDuration {
@@ -394,7 +401,7 @@ func updateZoom(spread: Double) {
     let step = max(Settings.zoomStepPixels, 5)
     let delta = spread - lastZoomSpread
     guard abs(delta) >= step else { return }
-    let steps = min(Int(abs(delta) / step), 3)   // Ausreißer deckeln
+    let steps = min(Int(abs(delta) / step), 3)   // cap outliers
     guard steps > 0 else { return }
     let zoomIn = delta > 0
     for _ in 0..<steps { postZoomKey(zoomIn: zoomIn) }
@@ -408,14 +415,14 @@ func resetGesture() {
     scrollRemainderY = 0
 }
 
-// MARK: - Zustandsautomat
+// MARK: - State machine
 
 func activeValidSlots() -> [Int] {
     slots.indices.filter { slots[$0].down && slots[$0].haveX && slots[$0].haveY }
 }
 
 func processGestureState() {
-    // Ohne bekanntes Ziel-Display wären alle Koordinaten sinnlos.
+    // Without a known target display every coordinate would be meaningless.
     guard haveTarget else { return }
     let active = activeValidSlots()
 
@@ -442,13 +449,13 @@ func processGestureState() {
                     postMouse(.leftMouseDragged, at: lastSinglePoint, clickState: currentClickState)
                 }
             } else {
-                // Anderer Finger als der, der die Geste begonnen hat.
+                // A different finger than the one that started the gesture.
                 endSingle(click: true)
                 mode = .suppressed
             }
         case .twoFinger:
-            // Ein Finger einer Geste wurde gehoben: NICHT als neuen Klick
-            // werten, sondern warten bis wirklich alle Finger weg sind.
+            // One finger of a gesture was lifted: do NOT treat this as a
+            // new click, wait until all fingers are really gone.
             noteTwoFingerEnd()
             mode = .suppressed
             resetGesture()
@@ -470,15 +477,15 @@ func processGestureState() {
             beginTwoFinger(active: active, avg: avg, spread: spread)
 
         case .single:
-            // Zweiter Finger kam dazu: der zurückgehaltene Klick wird
-            // verworfen, es war von Anfang an eine Geste.
+            // A second finger joined: the held-back click is discarded, this
+            // was a gesture from the start.
             endSingle(click: false)
             beginTwoFinger(active: active, avg: avg, spread: spread)
 
         case .twoFinger:
             if active != pairSlots {
-                // Anderes Fingerpaar (z.B. dritter Finger kam/ging):
-                // Basislinie neu setzen, sonst gibt es einen Sprung.
+                // Different pair of fingers (e.g. a third came or went):
+                // reset the baseline, otherwise there is a jump.
                 pairSlots = active
                 gestureStartAvg = avg
                 gestureStartSpread = spread
@@ -493,19 +500,19 @@ func processGestureState() {
 
             switch twoKind {
             case .undecided:
-                // Art der Geste EINMAL festlegen und bis zum Loslassen
-                // beibehalten - sonst wechselt eine Geste ständig zwischen
-                // Scrollen und Zoomen hin und her.
+                // Classify the gesture ONCE and keep it until released —
+                // otherwise a gesture keeps flipping between scrolling and
+                // zooming.
                 let moved = Double(hypot(avg.x - gestureStartAvg.x, avg.y - gestureStartAvg.y))
                 let spreadChange = abs(spread - gestureStartSpread)
                 if spreadChange > Settings.gestureDecideSpread && spreadChange > moved {
                     twoKind = .zoom
                     lastZoomSpread = gestureStartSpread
-                    vlog("GESTE: Zoom")
+                    vlog("GESTURE: zoom")
                     updateZoom(spread: spread)
                 } else if moved > Settings.gestureDecideMove {
                     twoKind = .scroll
-                    vlog("GESTE: Scroll")
+                    vlog("GESTURE: scroll")
                     postScroll(dx: dx, dy: dy)
                 }
             case .scroll:
@@ -516,10 +523,9 @@ func processGestureState() {
         }
 
     default:
-        // 3+ Finger werden nicht unterstützt: laufende Geste sauber beenden
-        // und bis zum vollständigen Loslassen nichts mehr auslösen. Ein
-        // dritter Finger macht aus einem Zwei-Finger-Tipp auch keinen
-        // Rechtsklick mehr.
+        // 3+ fingers are unsupported: end a running gesture cleanly and emit
+        // nothing until everything is released. A third finger also turns a
+        // two finger tap into something that is no longer a right click.
         endSingle(click: false)
         pendingRightClick = nil
         mode = .suppressed
@@ -532,8 +538,8 @@ func processGestureState() {
 func hidInputCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                       sender: UnsafeMutableRawPointer?, value: IOHIDValue) {
     let element = IOHIDValueGetElement(value)
-    // Nur Ereignisse des gebundenen Geräts auswerten - Cookies anderer
-    // Geräte könnten dieselben Zahlen haben und Slots verfälschen.
+    // Only evaluate events from the bound device — cookies of other devices
+    // could carry the same numbers and corrupt the slots.
     guard let bound = boundDevice, IOHIDElementGetDevice(element) === bound else { return }
     let cookie = IOHIDElementGetCookie(element)
     guard let mapping = cookieToSlotField[cookie] else { return }
@@ -542,10 +548,10 @@ func hidInputCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
 
     switch mapping.field {
     case .tip:
-        // Achtung: dieser Controller schickt X/Y VOR dem Tip-Down-Report im
-        // selben Tastendruck - haveX/haveY hier NICHT zurücksetzen, sonst
-        // werden die gerade erst eingetroffenen frischen Koordinaten wieder
-        // verworfen, bevor die Aktivierungsprüfung sie sieht.
+        // Careful: this controller sends X/Y BEFORE the tip-down report of
+        // the same touch — do NOT reset haveX/haveY here, or the fresh
+        // coordinates that just arrived get discarded before the activation
+        // check ever sees them.
         slots[mapping.slot].down = raw != 0
     case .x:
         let range = slotXRange[mapping.slot]
@@ -564,9 +570,8 @@ func hidInputCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
     processGestureState()
 }
 
-/// Bricht alles Laufende sauber ab - wichtig, damit nach einem Abziehen des
-/// Kabels mitten in einer Berührung nicht die linke Maustaste systemweit
-/// "gedrückt" hängen bleibt.
+/// Aborts everything cleanly — important so that unplugging the cable
+/// mid-touch does not leave the left mouse button stuck "down" system-wide.
 func resetEverything() {
     endSingle(click: false)
     cancelPendingDown()
@@ -582,9 +587,9 @@ func hidDeviceMatchedCallback(context: UnsafeMutableRawPointer?, result: IORetur
                               sender: UnsafeMutableRawPointer?, device: IOHIDDevice) {
     let product = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "Touch-Gerät"
 
-    // An das erste passende Gerät binden, weitere ignorieren.
+    // Bind to the first matching device, ignore the rest.
     if let bound = boundDevice, bound !== device {
-        NSLog("Weiteres Touch-Gerät ignoriert: %@", product)
+        NSLog("Ignoring additional touch device: %@", product)
         return
     }
 
@@ -628,31 +633,31 @@ func hidDeviceMatchedCallback(context: UnsafeMutableRawPointer?, result: IORetur
     }
 
     TouchEngine.panelConnected = true
-    NSLog("Touch-Gerät verbunden: %@ (%d Finger-Slots)", product, slots.count)
+    NSLog("Touch device connected: %@ (%d finger slots)", product, slots.count)
     TouchEngine.notifyStatusChanged()
 }
 
 func hidDeviceRemovedCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                               sender: UnsafeMutableRawPointer?, device: IOHIDDevice) {
-    // Nur reagieren, wenn wirklich unser gebundenes Gerät verschwindet.
+    // Only react when it is really our bound device that disappears.
     guard let bound = boundDevice, bound === device else { return }
     resetEverything()
     boundDevice = nil
     boundDeviceName = "—"
     TouchEngine.panelConnected = false
-    vlog("Touch-Gerät getrennt")
+    vlog("Touch device disconnected")
     TouchEngine.notifyStatusChanged()
 }
 
 func displayReconfigCallback(display: CGDirectDisplayID,
                              flags: CGDisplayChangeSummaryFlags,
                              userInfo: UnsafeMutableRawPointer?) {
-    // Nur nach Abschluss der Umkonfiguration reagieren.
+    // Only react once the reconfiguration has completed.
     if flags.contains(.beginConfigurationFlag) { return }
     resolveTargetDisplay()
 }
 
-// MARK: - Steuerung
+// MARK: - Control
 
 enum TouchEngine {
     static var manager: IOHIDManager? = nil
@@ -665,7 +670,7 @@ enum TouchEngine {
 
     static var targetDisplayLabel: String { targetDescription }
 
-    /// Produktname des erkannten Touch-Geräts, für die Anzeige im Menü.
+    /// Product name of the detected touch device, shown in the menu.
     static var deviceName: String { boundDeviceName }
 
     static func notifyStatusChanged() {
@@ -690,7 +695,7 @@ enum TouchEngine {
         IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
 
         guard IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
-            NSLog("HID-Manager konnte nicht geöffnet werden - fehlt die Freigabe für Eingabeüberwachung?")
+            NSLog("Could not open the HID manager — is Input Monitoring permission missing?")
             notifyStatusChanged()
             return
         }

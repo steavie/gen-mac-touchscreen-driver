@@ -1,11 +1,10 @@
 #!/bin/bash
-# Baut das Installationspaket Touchscreen-Treiber.pkg.
+# Builds the installer package Touchscreen-Treiber.pkg.
 #
-# Hinweis: Das Paket ist UNSIGNIERT. Für ein von Gatekeeper akzeptiertes
-# Paket bräuchte es ein "Developer ID Installer"-Zertifikat von Apple; ein
-# selbstsigniertes Codesignatur-Zertifikat reicht dafür nicht. Beim
-# Doppelklick warnt macOS deshalb - Rechtsklick auf das Paket und "Öffnen"
-# wählen, dann lässt es sich installieren.
+# Note: the package is UNSIGNED. A Gatekeeper-accepted package would need a
+# "Developer ID Installer" certificate from Apple; a self-signed code signing
+# certificate is not enough. macOS therefore warns on a double click — use
+# right click → Open instead.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -17,9 +16,9 @@ BUILD_DIR="build"
 STAGING="$BUILD_DIR/pkgroot"
 PKG="$BUILD_DIR/$APP_NAME-$VERSION.pkg"
 
-# App muss vorher gebaut sein
+# the app has to be built first
 if [ ! -d "$BUILD_DIR/$APP_NAME.app" ]; then
-    echo "App fehlt - erst ./build-app.sh ausführen." >&2
+    echo "App missing — run ./build-app.sh first." >&2
     exit 1
 fi
 
@@ -29,7 +28,7 @@ cp -R "$BUILD_DIR/$APP_NAME.app" "$STAGING/"
 
 chmod +x pkg-scripts/postinstall
 
-echo "Baue Paket (Version $VERSION) …"
+echo "Building package (version $VERSION) …"
 pkgbuild \
     --root "$STAGING" \
     --install-location /Applications \
@@ -39,10 +38,10 @@ pkgbuild \
     "$PKG"
 
 echo
-echo "Inhalt:"
+echo "Contents:"
 pkgutil --payload-files "$PKG" | head -5
 echo
-echo "Fertig: $(pwd)/$PKG"
+echo "Done: $(pwd)/$PKG"
 echo
-echo "Installation: Rechtsklick auf das Paket -> Öffnen (das Paket ist"
-echo "unsigniert, ein Doppelklick würde von Gatekeeper blockiert)."
+echo "To install: right click the package -> Open (it is unsigned, so a"
+echo "double click would be blocked by Gatekeeper)."

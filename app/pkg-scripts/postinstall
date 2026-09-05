@@ -33,7 +33,29 @@ pkill -u "$USER_UID" -f "touchscreen-driver/touchscreen-driver" 2>/dev/null || t
 pkill -u "$USER_UID" -f "Touchscreen-Treiber.app/Contents/MacOS" 2>/dev/null || true
 sleep 1
 
-# 3. start the app as the user
-launchctl asuser "$USER_UID" sudo -u "$CONSOLE_USER" open -a "$APP" 2>/dev/null || true
+# 3. Start the app as the user.
+#
+# Two things matter here and both cost an hour to find:
+#
+#  * This script runs BEFORE the installer has finished registering the app
+#    bundle with LaunchServices ("Registered bundle ... for uid" appears in
+#    /var/log/install.log several seconds after this script). Launching right
+#    away therefore fails. So retry for a while instead of trying once.
+#  * Do not silence the result. An earlier version ended in
+#    "2>/dev/null || true" and failed completely invisibly — the package
+#    installed fine, the driver simply never came up.
+#
+# Detached, so the installer is not held up by the retries.
+(
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 2
+        if launchctl asuser "$USER_UID" sudo -u "$CONSOLE_USER" open -a "$APP"; then
+            echo "postinstall: app started (attempt $attempt)"
+            exit 0
+        fi
+        echo "postinstall: launch attempt $attempt failed, retrying"
+    done
+    echo "postinstall: could not start the app; start it manually from /Applications"
+) &
 
 exit 0

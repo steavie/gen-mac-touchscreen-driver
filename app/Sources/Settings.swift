@@ -1,4 +1,4 @@
-// gen-mac-touchscreen-driver — settings, persisted in UserDefaults
+// steavie-gen-mac-touchscreen-driver — settings, persisted in UserDefaults
 // Copyright (C) 2026 Stefan Kriesel
 //
 // This program is free software: you can redistribute it and/or modify it

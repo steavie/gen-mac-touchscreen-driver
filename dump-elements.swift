@@ -1,4 +1,4 @@
-// gen-mac-touchscreen-driver — HID diagnostic tool
+// steavie-gen-mac-touchscreen-driver — HID diagnostic tool
 // Copyright (C) 2026 Stefan Kriesel
 // Licensed under the GNU General Public License v3.0, see LICENSE.
 //

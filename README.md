@@ -1,4 +1,4 @@
-# gen-mac-touchscreen-driver
+# steavie-gen-mac-touchscreen-driver
 
 A driver for **USB touchscreens on macOS**, as a small menu bar app.
 
@@ -71,8 +71,8 @@ something misbehaves.
    red in that case and the menu offers a shortcut to the right settings
    pane.
 
-4. Enable **"Bei Anmeldung starten"** (start at login) in the menu if you
-   want it to come back automatically after a reboot.
+4. Enable **"Start at login"** in the menu if you want it to come back
+   automatically after a reboot.
 
 ## Gestures
 
@@ -118,7 +118,8 @@ Driver and interface run in the **same process**, so there is no config file
 and nothing to reload: the menu writes to `UserDefaults` and the gesture
 engine reads from it on every event. Changes take effect immediately.
 
-The menu offers:
+The interface follows the system language (English and German are
+included). The menu offers:
 
 - **Status** — whether the driver runs and which device is connected
 - **Target display** — automatic, or a specific display

@@ -44,6 +44,12 @@ import Carbon.HIToolbox
 let digitizerUsagePage = 0x0D
 let touchScreenUsage = 0x04
 
+/// Shorthand for a localized user-facing string. English text doubles as the
+/// key, so en.lproj is an identity mapping and de.lproj carries the German.
+func L(_ key: String) -> String {
+    NSLocalizedString(key, comment: "")
+}
+
 func vlog(_ message: @autoclosure () -> String) {
     if Settings.verboseLogging { NSLog("%@", message()) }
 }
@@ -81,7 +87,7 @@ struct DisplayInfo {
 
     var isMain: Bool { id == CGMainDisplayID() }
     var label: String {
-        "\(Int(bounds.width))×\(Int(bounds.height))" + (isMain ? " (Hauptbildschirm)" : "")
+        "\(Int(bounds.width))×\(Int(bounds.height))" + (isMain ? " (" + L("main display") + ")" : "")
     }
 }
 
@@ -116,7 +122,7 @@ var targetDescription = "—"
 /// first rearrangement until the app is restarted.
 func resolveTargetDisplay() {
     guard let target = pickTargetDisplay(activeDisplays()) else {
-        if !haveTarget { targetDescription = "nicht gefunden" }
+        if !haveTarget { targetDescription = L("not found") }
         return
     }
     targetBounds = target.bounds
@@ -585,7 +591,7 @@ func resetEverything() {
 
 func hidDeviceMatchedCallback(context: UnsafeMutableRawPointer?, result: IOReturn,
                               sender: UnsafeMutableRawPointer?, device: IOHIDDevice) {
-    let product = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "Touch-Gerät"
+    let product = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? L("Touch device")
 
     // Bind to the first matching device, ignore the rest.
     if let bound = boundDevice, bound !== device {

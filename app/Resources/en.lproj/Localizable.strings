@@ -1,0 +1,49 @@
+/* gen-mac-touchscreen-driver — English user interface strings.
+   The English text is also the key, so this is an identity mapping. It is
+   kept explicit so that every localizable string is visible in one place. */
+
+
+/* Status */
+"Driver running" = "Driver running";
+"Driver stopped" = "Driver stopped";
+"Connected: %@" = "Connected: %@";
+"No touch device found" = "No touch device found";
+"Touch device" = "Touch device";
+"Touchscreen driver" = "Touchscreen driver";
+"Touchscreen driver is running" = "Touchscreen driver is running";
+"Accessibility permission missing" = "Accessibility permission missing";
+
+/* Permissions */
+"Grant Accessibility permission …" = "Grant Accessibility permission …";
+"⚠︎  Grant Accessibility permission …" = "⚠︎  Grant Accessibility permission …";
+"Without this permission macOS discards every event the driver posts." = "Without this permission macOS discards every event the driver posts.";
+
+/* Display */
+"Display: %@" = "Display: %@";
+"main display" = "main display";
+"not found" = "not found";
+"Automatic (whichever is not the main display)" = "Automatic (whichever is not the main display)";
+"Fallback only — aims at the wrong screen once the touchscreen itself is the main display." = "Fallback only — aims at the wrong screen once the touchscreen itself is the main display.";
+"EDID identity %@ — stays the same across replugging and rearranging." = "EDID identity %@ — stays the same across replugging and rearranging.";
+
+/* Scrolling */
+"Scrolling: %@" = "Scrolling: %@";
+"natural" = "natural";
+"classic" = "classic";
+"Natural (content follows the finger)" = "Natural (content follows the finger)";
+"Classic (like Windows)" = "Classic (like Windows)";
+"Invert horizontally" = "Invert horizontally";
+
+/* Sliders */
+"Zoom sensitivity" = "Zoom sensitivity";
+"Click delay" = "Click delay";
+"%.0f px/step" = "%.0f px/step";
+"%.0f ms" = "%.0f ms";
+
+/* Misc */
+"Start at login" = "Start at login";
+"Verbose logging" = "Verbose logging";
+"Writes every event to the system log (Console.app)." = "Writes every event to the system log (Console.app).";
+"Reset settings" = "Reset settings";
+"Restart driver" = "Restart driver";
+"Quit" = "Quit";

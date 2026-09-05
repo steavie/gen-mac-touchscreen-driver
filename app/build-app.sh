@@ -19,6 +19,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp Info.plist "$APP/Contents/Info.plist"
 
+# Localizations (en/de). Without these in Resources the app silently falls
+# back to the keys, which happen to be the English texts.
+cp -R Resources/*.lproj "$APP/Contents/Resources/"
+
 echo "Compiling …"
 swiftc -swift-version 5 -O \
     Sources/*.swift \

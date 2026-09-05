@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  : ["cursorarrow.slash", "hand.tap"]
 
         let image = candidates.lazy
-            .compactMap { NSImage(systemSymbolName: $0, accessibilityDescription: "Touchscreen-Treiber") }
+            .compactMap { NSImage(systemSymbolName: $0, accessibilityDescription: L("Touchscreen driver")) }
             .first
 
         if let image {
@@ -85,8 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 attributes: [.foregroundColor: healthy ? NSColor.labelColor : NSColor.systemRed])
         }
         button.toolTip = healthy
-            ? "Touchscreen-Treiber läuft"
-            : (TouchEngine.isRunning ? "Bedienungshilfen-Freigabe fehlt" : "Treiber gestoppt")
+            ? L("Touchscreen driver is running")
+            : (TouchEngine.isRunning ? L("Accessibility permission missing") : L("Driver stopped"))
     }
 
     // MARK: - Menu
@@ -102,35 +102,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // --- status ---
         menu.addItem(statusLine(
             ok: TouchEngine.isRunning,
-            text: TouchEngine.isRunning ? "Treiber läuft" : "Treiber gestoppt"))
+            text: TouchEngine.isRunning ? L("Driver running") : L("Driver stopped")))
         menu.addItem(statusLine(
             ok: TouchEngine.panelConnected,
             text: TouchEngine.panelConnected
-                ? "Verbunden: \(TouchEngine.deviceName)"
-                : "Kein Touch-Gerät gefunden"))
+                ? String(format: L("Connected: %@"), TouchEngine.deviceName)
+                : L("No touch device found")))
 
         if !TouchEngine.accessibilityTrusted {
-            let warn = NSMenuItem(title: "Bedienungshilfen freigeben …",
+            let warn = NSMenuItem(title: L("Grant Accessibility permission …"),
                                   action: #selector(requestAccessibility), keyEquivalent: "")
             warn.target = self
             warn.attributedTitle = NSAttributedString(
-                string: "⚠︎  Bedienungshilfen freigeben …",
+                string: L("⚠︎  Grant Accessibility permission …"),
                 attributes: [.foregroundColor: NSColor.systemRed,
                              .font: NSFont.menuFont(ofSize: 0)])
-            warn.toolTip = "Ohne diese Freigabe verwirft macOS alle vom Treiber gesendeten Ereignisse."
+            warn.toolTip = L("Without this permission macOS discards every event the driver posts.")
             menu.addItem(warn)
         }
 
         menu.addItem(.separator())
 
         // --- target display ---
-        let displayItem = NSMenuItem(title: "Display: \(TouchEngine.targetDisplayLabel)", action: nil, keyEquivalent: "")
+        let displayItem = NSMenuItem(title: String(format: L("Display: %@"), TouchEngine.targetDisplayLabel), action: nil, keyEquivalent: "")
         displayItem.submenu = buildDisplayMenu()
         menu.addItem(displayItem)
 
         // --- scroll direction ---
         let scrollItem = NSMenuItem(
-            title: "Scrollen: " + (Settings.invertScrollY ? "klassisch" : "natürlich"),
+            title: String(format: L("Scrolling: %@"), Settings.invertScrollY ? L("classic") : L("natural")),
             action: nil, keyEquivalent: "")
         scrollItem.submenu = buildScrollMenu()
         menu.addItem(scrollItem)
@@ -142,13 +142,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // step, so SMALLER means more sensitive. The slider is therefore
         // presented inverted.
         menu.addItem(sliderItem(
-            title: "Zoom-Empfindlichkeit",
+            title: L("Zoom sensitivity"),
             min: 15, max: 80, value: Settings.zoomStepPixels, inverted: true,
-            format: { String(format: "%.0f px/Schritt", $0) },
+            format: { String(format: L("%.0f px/step"), $0) },
             action: #selector(zoomSliderChanged(_:))))
 
         menu.addItem(sliderItem(
-            title: "Klick-Verzögerung",
+            title: L("Click delay"),
             min: 0, max: 0.12, value: Settings.singleTouchDelay, inverted: false,
             format: { String(format: "%.0f ms", $0 * 1000) },
             action: #selector(delaySliderChanged(_:))))
@@ -156,31 +156,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         // --- misc ---
-        let loginItem = NSMenuItem(title: "Bei Anmeldung starten",
+        let loginItem = NSMenuItem(title: L("Start at login"),
                                    action: #selector(toggleLoginItem), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menu.addItem(loginItem)
 
-        let logItem = NSMenuItem(title: "Ausführliches Protokoll",
+        let logItem = NSMenuItem(title: L("Verbose logging"),
                                  action: #selector(toggleVerbose), keyEquivalent: "")
         logItem.target = self
         logItem.state = Settings.verboseLogging ? .on : .off
-        logItem.toolTip = "Schreibt jedes Ereignis ins Systemprotokoll (Konsole.app)."
+        logItem.toolTip = L("Writes every event to the system log (Console.app).")
         menu.addItem(logItem)
 
-        let resetItem = NSMenuItem(title: "Einstellungen zurücksetzen",
+        let resetItem = NSMenuItem(title: L("Reset settings"),
                                    action: #selector(resetSettings), keyEquivalent: "")
         resetItem.target = self
         menu.addItem(resetItem)
 
         menu.addItem(.separator())
 
-        let restart = NSMenuItem(title: "Treiber neu starten", action: #selector(restartEngine), keyEquivalent: "")
+        let restart = NSMenuItem(title: L("Restart driver"), action: #selector(restartEngine), keyEquivalent: "")
         restart.target = self
         menu.addItem(restart)
 
-        let quit = NSMenuItem(title: "Beenden", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L("Quit"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -208,11 +208,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sub = NSMenu()
         let setting = Settings.targetDisplay
 
-        let auto = NSMenuItem(title: "Automatisch (nicht der Hauptbildschirm)",
+        let auto = NSMenuItem(title: L("Automatic (whichever is not the main display)"),
                               action: #selector(selectAutoDisplay), keyEquivalent: "")
         auto.target = self
         auto.state = (setting == "auto") ? .on : .off
-        auto.toolTip = "Notlösung - zielt daneben, sobald der Touchscreen selbst Hauptbildschirm ist."
+        auto.toolTip = L("Fallback only — aims at the wrong screen once the touchscreen itself is the main display.")
         sub.addItem(auto)
         sub.addItem(.separator())
 
@@ -221,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             item.representedObject = display.key.description
             item.state = (setting == display.key.description) ? .on : .off
-            item.toolTip = "EDID-Kennung \(display.key) - bleibt über Umstecken und Umsortieren gleich."
+            item.toolTip = String(format: L("EDID identity %@ — stays the same across replugging and rearranging."), display.key.description)
             sub.addItem(item)
         }
         return sub
@@ -230,13 +230,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func buildScrollMenu() -> NSMenu {
         let sub = NSMenu()
 
-        let natural = NSMenuItem(title: "Natürlich (Inhalt folgt dem Finger)",
+        let natural = NSMenuItem(title: L("Natural (content follows the finger)"),
                                  action: #selector(setNaturalScrolling), keyEquivalent: "")
         natural.target = self
         natural.state = Settings.invertScrollY ? .off : .on
         sub.addItem(natural)
 
-        let classic = NSMenuItem(title: "Klassisch (wie Windows)",
+        let classic = NSMenuItem(title: L("Classic (like Windows)"),
                                  action: #selector(setClassicScrolling), keyEquivalent: "")
         classic.target = self
         classic.state = Settings.invertScrollY ? .on : .off
@@ -244,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         sub.addItem(.separator())
 
-        let flipX = NSMenuItem(title: "Horizontal umkehren",
+        let flipX = NSMenuItem(title: L("Invert horizontally"),
                                action: #selector(toggleInvertX), keyEquivalent: "")
         flipX.target = self
         flipX.state = Settings.invertScrollX ? .on : .off

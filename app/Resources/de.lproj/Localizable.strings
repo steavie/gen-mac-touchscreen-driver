@@ -1,0 +1,47 @@
+/* gen-mac-touchscreen-driver — German user interface strings.
+   The English text serves as the key, see en.lproj for the identity mapping. */
+
+/* Status */
+"Driver running" = "Treiber läuft";
+"Driver stopped" = "Treiber gestoppt";
+"Connected: %@" = "Verbunden: %@";
+"No touch device found" = "Kein Touch-Gerät gefunden";
+"Touch device" = "Touch-Gerät";
+"Touchscreen driver" = "Touchscreen-Treiber";
+"Touchscreen driver is running" = "Touchscreen-Treiber läuft";
+"Accessibility permission missing" = "Bedienungshilfen-Freigabe fehlt";
+
+/* Permissions */
+"Grant Accessibility permission …" = "Bedienungshilfen freigeben …";
+"⚠︎  Grant Accessibility permission …" = "⚠︎  Bedienungshilfen freigeben …";
+"Without this permission macOS discards every event the driver posts." = "Ohne diese Freigabe verwirft macOS alle vom Treiber gesendeten Ereignisse.";
+
+/* Display */
+"Display: %@" = "Display: %@";
+"main display" = "Hauptbildschirm";
+"not found" = "nicht gefunden";
+"Automatic (whichever is not the main display)" = "Automatisch (nicht der Hauptbildschirm)";
+"Fallback only — aims at the wrong screen once the touchscreen itself is the main display." = "Notlösung – zielt daneben, sobald der Touchscreen selbst Hauptbildschirm ist.";
+"EDID identity %@ — stays the same across replugging and rearranging." = "EDID-Kennung %@ – bleibt über Umstecken und Umsortieren gleich.";
+
+/* Scrolling */
+"Scrolling: %@" = "Scrollen: %@";
+"natural" = "natürlich";
+"classic" = "klassisch";
+"Natural (content follows the finger)" = "Natürlich (Inhalt folgt dem Finger)";
+"Classic (like Windows)" = "Klassisch (wie Windows)";
+"Invert horizontally" = "Horizontal umkehren";
+
+/* Sliders */
+"Zoom sensitivity" = "Zoom-Empfindlichkeit";
+"Click delay" = "Klick-Verzögerung";
+"%.0f px/step" = "%.0f px/Schritt";
+"%.0f ms" = "%.0f ms";
+
+/* Misc */
+"Start at login" = "Bei Anmeldung starten";
+"Verbose logging" = "Ausführliches Protokoll";
+"Writes every event to the system log (Console.app)." = "Schreibt jedes Ereignis ins Systemprotokoll (Konsole.app).";
+"Reset settings" = "Einstellungen zurücksetzen";
+"Restart driver" = "Treiber neu starten";
+"Quit" = "Beenden";

@@ -228,9 +228,6 @@ land twice.
   `app/pkg-scripts/postinstall` — bundle, build, packaging
 - `dump-elements.swift` — diagnostic tool, lists all HID elements of the
   connected device (report IDs, cookies, usage pages, value ranges)
-- `main.swift`, `de.aronax.touchscreen-driver.plist` — **obsolete**: the
-  earlier command line version and its LaunchAgent, kept for reference. It
-  is not maintained; everything above describes the app.
 - `NOTES.de.md` — development log in German: how this came about, which
   decisions were made and which dead ends were hit
 

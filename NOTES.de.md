@@ -339,7 +339,7 @@ Alles vom Nutzer bestätigt:
   geäußert).
 - **Feintuning der Gesten-Schwellen** (`singleTouchDelay`,
   `gestureDecideMove`, `gestureDecideSpread`, `zoomStepPixels`, ganz oben in
-  `main.swift`) beruht auf plausiblen Startwerten, nicht auf systematischem
+  `app/Sources/Settings.swift`) beruht auf plausiblen Startwerten, nicht auf systematischem
   Ausprobieren. Falls sich Scrollen/Zoomen zu träge oder zu hektisch
   anfühlt, sind das die Stellschrauben.
 - **Zoom-Richtung bei "natural scrolling"**: Die Scroll-Vorzeichen wurden
